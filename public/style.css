@@ -1,3 +1,11 @@
+/* Suit symbols come from a proper symbol font: some interface fonts draw a tiny
+   spade or club that looks like a diamond. Only the four suit characters use it. */
+@font-face {
+  font-family: "Card Suits";
+  src: local("Segoe UI Symbol"), local("Apple Symbols"), local("Arial Unicode MS"), local("DejaVu Sans"), local("Arial");
+  unicode-range: U+2660-2667;
+}
+
 :root {
   --felt: #145a3c;
   --felt-dark: #0e4430;
@@ -19,7 +27,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Card Suits", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--ink);
   background: radial-gradient(ellipse at 50% 30%, var(--felt-light), var(--felt) 55%, var(--felt-dark));
   min-height: 100vh;
@@ -324,3 +332,93 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 .tracker b { color: var(--ink); }
 .tracker b.noted { color: #4cd187; }
 .tracker .q { color: rgba(255,255,255,.45); }
+
+/* King suit symbols in notes, chips and the counter */
+.ks { font-size: 1.3em; line-height: 0; vertical-align: -0.08em; margin-left: 1px; }
+.left-cell b { font-size: 14px; }
+
+/* "CAMBRIO!" pop-up when someone calls it */
+.cambio-pop { position: fixed; left: 50%; top: 45%; z-index: 100; pointer-events: none; transform: translate(-50%, -50%);
+  display: grid; justify-items: center; gap: 4px; padding: 18px 34px; border-radius: 22px;
+  background: linear-gradient(135deg, #e74c3c, #b0281a); color: #fff; box-shadow: 0 18px 50px rgba(0,0,0,.5), 0 0 0 4px var(--gold); }
+.cambio-pop b { font-family: Georgia, serif; font-size: clamp(40px, 9vw, 84px); letter-spacing: 3px; line-height: 1; text-shadow: 0 3px 0 rgba(0,0,0,.25); }
+.cambio-pop span { font-size: clamp(14px, 2.5vw, 20px); font-weight: 600; opacity: .95; }
+.tag.cambio-tag { background: #e74c3c; color: #fff; }
+
+/* ---------- card backs and table colours (chosen on the home screen) ---------- */
+body[data-table="blue"] { --felt: #1d4f7a; --felt-dark: #123553; --felt-light: #2a6597; }
+body[data-table="purple"] { --felt: #4b2a6b; --felt-dark: #321b49; --felt-light: #613a88; }
+body[data-table="charcoal"] { --felt: #2c3036; --felt-dark: #1b1e22; --felt-light: #3b4048; }
+.card.back[data-back="navy"], body[data-back="navy"] .card.back { --back-1: #22346b; --back-2: #141f45; }
+.card.back[data-back="teal"], body[data-back="teal"] .card.back { --back-1: #138a8a; --back-2: #0b5c63; }
+.card.back[data-back="red"] { --back-1: #8e2c2c; --back-2: #6d1f1f; }
+.card.back[data-back="gold"], body[data-back="gold"] .card.back {
+  background: repeating-linear-gradient(45deg, rgba(242,193,78,.18) 0 3px, transparent 3px 9px), linear-gradient(135deg, #222, #0d0d0d);
+}
+body[data-back="gold"] .card.back::after, .card.back[data-back="gold"]::after { color: rgba(242,193,78,.7); }
+/* swatches don't follow the player's own choice, they show each option */
+.swatch .card.back[data-back="red"] { background: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 4px, transparent 4px 10px), linear-gradient(135deg, #8e2c2c, #6d1f1f); }
+.swatch .card.back[data-back="navy"] { background: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 4px, transparent 4px 10px), linear-gradient(135deg, #22346b, #141f45); }
+.swatch .card.back[data-back="teal"] { background: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 4px, transparent 4px 10px), linear-gradient(135deg, #138a8a, #0b5c63); }
+.swatch .card.back[data-back="red"]::after, .swatch .card.back[data-back="navy"]::after, .swatch .card.back[data-back="teal"]::after { color: rgba(255,255,255,.35); }
+.customise { gap: 8px; }
+.customise h3 { margin: 0; }
+.swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.swatch { display: grid; justify-items: center; gap: 4px; background: rgba(0,0,0,.2); border: 2px solid transparent; border-radius: 12px; padding: 8px 4px; color: var(--ink); cursor: pointer; }
+.swatch.on { border-color: var(--gold); }
+.swatch small { font-size: 11px; color: var(--muted); }
+.swatch .card { --card-w: 34px; }
+.felt { width: 44px; height: 30px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+.felt[data-table="green"] { background: radial-gradient(#1b6e4b, #0e4430); }
+.felt[data-table="blue"] { background: radial-gradient(#2a6597, #123553); }
+.felt[data-table="purple"] { background: radial-gradient(#613a88, #321b49); }
+.felt[data-table="charcoal"] { background: radial-gradient(#3b4048, #1b1e22); }
+.home-links { display: flex; justify-content: center; margin: 14px 0; }
+.home .box + .box, .home .box.rejoin { margin-top: 14px; }
+.rejoin { display: flex !important; align-items: center; justify-content: space-between; gap: 10px; }
+/* tutorial */
+.tutorial .tut-step { font-size: 12px; color: #6b6b6b; text-transform: uppercase; letter-spacing: 1px; }
+.tut-cards { display: flex; gap: 8px; justify-content: center; margin: 10px 0; }
+.tut-cards .card { --card-w: 52px; }
+.tut-buttons { display: flex; gap: 8px; justify-content: center; margin: 10px 0; }
+.tut-buttons span { background: #1d2330; color: #f4f1e8; padding: 6px 14px; border-radius: 10px; font-weight: 600; font-size: 14px; }
+.tut-nav { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+/* ---------- bots, target score, match ---------- */
+.tag.bot-tag { background: #8fa3c2; }
+button.tiny { padding: 2px 8px; font-size: 12px; min-height: 0; }
+.add-bot { display: block; margin: 0 auto 10px; }
+.match-over { background: #ffd35c; color: #2a2100; font-weight: 800; font-size: 18px; border-radius: 12px; padding: 10px 14px; text-align: center; }
+.match-over small { display: block; font-weight: 500; font-size: 13px; }
+
+/* ---------- emoji reactions (fixed, so nothing on the table moves) ---------- */
+.react-box { position: fixed; right: 16px; bottom: 16px; z-index: 35; display: flex; align-items: center; gap: 6px; }
+.react-btn { width: 46px; height: 46px; border-radius: 50%; font-size: 22px; padding: 0; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.25); }
+.react-pick { display: flex; gap: 2px; background: rgba(15,20,30,.85); border-radius: 999px; padding: 4px 6px; }
+.react-pick button { background: none; border: 0; font-size: 24px; padding: 4px 6px; min-height: 0; }
+.react-pick button:hover { transform: scale(1.2); }
+.reaction-float { position: fixed; z-index: 60; font-size: 34px; pointer-events: none; }
+.stick-time { position: fixed; z-index: 60; pointer-events: none; background: #ffd35c; color: #2a2100; font-weight: 800; font-size: 13px;
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+@media (max-width: 520px) {
+  .table.playing ~ .react-box, .table.playing .react-box { bottom: 128px; right: 10px; }
+  .react-btn { width: 40px; height: 40px; font-size: 19px; }
+  .react-pick button { font-size: 21px; padding: 3px 4px; }
+}
+
+/* ---------- round replay ---------- */
+dialog.replay { max-width: 720px; padding: 16px; }
+.replay-head { display: flex; justify-content: space-between; align-items: center; }
+.replay-head h2 { margin: 0; }
+.replay-step { min-height: 3.2em; margin: 8px 0; }
+.replay-table { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; background: var(--felt); border-radius: 12px; padding: 12px; }
+.replay-seat { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; }
+.replay-hand { display: grid; grid-template-columns: repeat(2, auto); gap: 4px; align-items: center; --card-w: 40px; }
+.replay-hand.wide { grid-template-columns: repeat(3, auto); }
+.replay-pile { --card-w: 40px; }
+dialog .secondary { background: #e2dccd; color: #1d2330; }
+dialog .secondary:hover:not(:disabled) { background: #d6cfbd; }
+dialog .ghost { color: #1d2330; border: 1px solid rgba(29,35,48,.35); }
+dialog .muted { color: #5d6472; }
+.replay input[type=range] { width: 100%; margin: 12px 0 6px; }
+.replay-controls { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }

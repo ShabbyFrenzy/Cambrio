@@ -4,6 +4,7 @@
 
 const { Game, MAX_PLAYERS, MIN_PLAYERS, HAND_SIZES, MAX_PLAYERS_BY_HAND, TURN_TIMER_CHOICES, OPTIONS } = require('./game');
 const QUICK_PLAY_TURN_SECONDS = 30;
+const TARGET_CHOICES = [0, 50, 100]; // 0 = play rounds forever
 
 const rooms = new Map();
 // No I or O, to avoid confusion with 1 and 0.
@@ -41,7 +42,9 @@ function createRoom() {
     game: null,
     handSize: 4,
     turnSeconds: 0, // 0 = no turn timer
-    options: { remember: false, notes: false, counter: false, tracker: false }, // extra help, private rooms only
+    options: Object.fromEntries(OPTIONS.map((k) => [k, false])), // game options, private rooms only
+    targetScore: 0, // play rounds until someone reaches this total (0 = no target)
+    matchOver: null, // { winners: [playerId] } once someone reaches the target
     maxPlayers: MAX_PLAYERS, // host can lower this for private rooms
     round: 0,
     createdAt: Date.now(),
@@ -81,8 +84,9 @@ function leaveRoom(code, playerId) {
   if (!room) return;
   room.players = room.players.filter((p) => p.playerId !== playerId);
   if (room.game) room.game.removePlayer(playerId);
-  if (room.hostId === playerId) room.hostId = room.players[0] ? room.players[0].playerId : null;
-  if (room.players.length === 0) rooms.delete(room.code);
+  const humans = room.players.filter((p) => !p.bot);
+  if (room.hostId === playerId) room.hostId = humans[0] ? humans[0].playerId : null;
+  if (humans.length === 0) rooms.delete(room.code); // bots never keep a room alive
 }
 
 function startGame(code, byPlayerId) {
@@ -97,6 +101,11 @@ function startGame(code, byPlayerId) {
   const order = seated.slice(offset).concat(seated.slice(0, offset));
   const max = MAX_PLAYERS_BY_HAND[room.handSize];
   if (order.length > max) throw new RoomError(`With ${room.handSize} cards each, at most ${max} players can play. Switch to 4 cards.`);
+  if (room.matchOver) {
+    // A new match: everyone starts again from zero.
+    for (const p of room.players) { p.totalScore = 0; p.wins = 0; }
+    room.matchOver = null;
+  }
   room.game = new Game(order.map((p) => ({ id: p.playerId, name: p.name })), { handSize: room.handSize, turnMs: room.turnSeconds * 1000, options: room.isPublic ? {} : room.options });
   room.round++;
   room.scored = false;
@@ -137,6 +146,42 @@ function setOption(code, byPlayerId, key, value) {
   if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
   if (!OPTIONS.includes(key)) throw new RoomError('Unknown option');
   room.options = { ...room.options, [key]: !!value };
+  if (key === 'bots' && !value) room.players = room.players.filter((p) => !p.bot);
+}
+
+function setTargetScore(code, byPlayerId, value) {
+  const room = getRoom(code);
+  if (!room) throw new RoomError('Room not found');
+  if (room.hostId !== byPlayerId) throw new RoomError('Only the host can change this');
+  if (room.isPublic) throw new RoomError('Quick play games have no target score');
+  if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
+  const n = Number(value);
+  if (!TARGET_CHOICES.includes(n)) throw new RoomError('Pick one of the listed targets');
+  room.targetScore = n;
+  room.matchOver = null;
+}
+
+/** Host-only, private rooms with the bots option on: seat a computer player. */
+function addBot(code, byPlayerId) {
+  const room = getRoom(code);
+  if (!room) throw new RoomError('Room not found');
+  if (room.hostId !== byPlayerId) throw new RoomError('Only the host can add bots');
+  if (room.isPublic || !room.options.bots) throw new RoomError('Turn on the Bots option first');
+  if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
+  if (room.players.length >= room.maxPlayers) throw new RoomError('This room is full');
+  let n = 1;
+  while (room.players.some((p) => p.name === `Bot ${n}`)) n++;
+  const p = { playerId: `bot-${room.code}-${n}-${Date.now().toString(36)}`, name: `Bot ${n}`, connected: true, bot: true, totalScore: 0, wins: 0 };
+  room.players.push(p);
+  return p;
+}
+
+function removeBot(code, byPlayerId, botId) {
+  const room = getRoom(code);
+  if (!room) throw new RoomError('Room not found');
+  if (room.hostId !== byPlayerId) throw new RoomError('Only the host can remove bots');
+  if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
+  room.players = room.players.filter((p) => !(p.bot && p.playerId === botId));
 }
 
 function setMaxPlayers(code, byPlayerId, value) {
@@ -164,6 +209,11 @@ function recordResults(room) {
   for (const id of g.results.winners) {
     const p = room.players.find((x) => x.playerId === id);
     if (p) p.wins++;
+  }
+  // Match to a target score: once anyone reaches it, the lowest total wins.
+  if (room.targetScore && room.players.some((p) => p.totalScore >= room.targetScore)) {
+    const low = Math.min(...room.players.map((p) => p.totalScore));
+    room.matchOver = { winners: room.players.filter((p) => p.totalScore === low).map((p) => p.playerId) };
   }
 }
 
@@ -199,6 +249,9 @@ function view(room, playerId) {
     turnSeconds: room.turnSeconds,
     options: room.options,
     turnChoices: TURN_TIMER_CHOICES,
+    targetScore: room.targetScore,
+    targetChoices: TARGET_CHOICES,
+    matchOver: room.matchOver,
     isPublic: !!room.isPublic,
     players: room.players.map((p) => ({
       id: p.playerId,
@@ -206,6 +259,7 @@ function view(room, playerId) {
       connected: p.connected,
       totalScore: p.totalScore,
       wins: p.wins,
+      bot: !!p.bot,
     })),
     game: room.game ? room.game.view(playerId) : null,
   };
@@ -214,12 +268,12 @@ function view(room, playerId) {
 function sweep(maxIdleMs = 30 * 60 * 1000) {
   const now = Date.now();
   for (const [code, room] of rooms) {
-    const anyone = room.players.some((p) => p.connected);
+    const anyone = room.players.some((p) => p.connected && !p.bot);
     if (!anyone && now - room.lastActive > maxIdleMs) rooms.delete(code);
   }
 }
 
 module.exports = {
-  rooms, RoomError, createRoom, getRoom, joinRoom, leaveRoom, startGame, setHandSize, setMaxPlayers, setTurnTimer, setOption,
+  rooms, RoomError, createRoom, getRoom, joinRoom, leaveRoom, startGame, setHandSize, setMaxPlayers, setTurnTimer, setOption, setTargetScore, addBot, removeBot,
   createRoomWithPlayers, recordResults, view, sweep, normalizeCode, cleanName,
 };

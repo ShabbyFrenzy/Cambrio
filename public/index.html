@@ -22,33 +22,70 @@
   <dialog id="rulesDialog">
     <div class="rules">
       <h2>How to play</h2>
-      <p>Everyone gets 4 face-down cards (or 6, if the host picks that). At the start you peek at your bottom row, then those cards go face down. Try to remember them!</p>
       <p><b>Goal:</b> have the lowest total when the round ends.</p>
+      <h3>Card values</h3>
+      <p>Red King (K♥︎ K♦︎) −1, Joker 0, Ace 1, 2–10 face value, Jack 11, Queen 12, Black King (K♠︎ K♣︎) 13.</p>
+
+      <h3>Starting</h3>
+      <p>Everyone gets 4 face-down cards (or 6, if the host picks that). You peek at your bottom row (2 cards, or 3 with 6 cards) for 10 seconds, or until you press <b>I've got them</b>. Then they go face down, so remember them!</p>
+      <p>Other players' hands are shown turned round, as if you sat across the table: their bottom row is the top row from your side.</p>
+
+      <h3>Selecting cards</h3>
+      <p>Tap a card to select it (it lights up gold). Tap another to move the selection. To select several cards at once, hold and drag across them. You need two cards for a J, Q or Black King power, and you can select several for a note.</p>
+
       <h3>On your turn</h3>
       <ul>
-        <li>Press <b>Draw</b> (or tap the deck), then select one of your cards and press <b>Swap</b>, or press <b>Discard</b>. Swapping puts the old card on the discard pile. You can't take from the discard pile.</li>
-        <li>Or call <b>Cambrio</b> instead of drawing. Everyone else gets one last turn. Your cards can still be swapped and stuck.</li>
+        <li>Press <b>Draw</b> (or tap the deck). Then either select one of your cards and press <b>Swap</b> to put the new card in its place (the old card goes on the discard pile), or press <b>Discard</b> to throw the new card away.</li>
+        <li>Or press <b>Call Cambrio</b> instead of drawing (tap twice to confirm). A big CAMBRIO! pops up for everyone and lands on your seat. Everyone else gets one last turn. Your cards can still be swapped, looked at and stuck.</li>
+        <li>You can't take cards from the discard pile.</li>
       </ul>
+
       <h3>Powers</h3>
-      <p>A power works only when you draw the card from the deck and discard it straight away.</p>
+      <p>A power works only when you draw the card from the deck and discard it straight away. Select the card(s), then press the power button.</p>
       <ul>
         <li><b>7 or 8:</b> look at one of your own cards.</li>
         <li><b>9 or 10:</b> look at one of another player's cards.</li>
         <li><b>J or Q:</b> swap any two cards without looking.</li>
-        <li><b>Black King:</b> look at any two cards, then you may swap any two.</li>
+        <li><b>Black King:</b> look at any two cards, then you may swap any two (or press <b>Don't swap</b>).</li>
       </ul>
+      <p>When anyone looks at a card it glows blue with 👁, and swapped cards glow orange with ⇄, for a few seconds. The log on the side says exactly which cards moved where.</p>
+
       <h3>Sticking</h3>
-      <p>Tap any card, yours or another player's, to select it (it lights up gold), then press <b>Stick</b> if you think it matches the rank of the top discard. It flips over so everyone sees it. Do it any time, as often as you like.</p>
+      <p>Select any card, yours or another player's, and press <b>Stick</b> if you think it matches the rank of the top discard. It flips over so everyone sees it. You can stick any time, as often as you like.</p>
       <ul>
-        <li>Stick your own card: it leaves your hand.</li>
-        <li>Stick another player's card: you then give them one of your cards.</li>
-        <li>Wrong card: it goes back where it was and you take a penalty card.</li>
+        <li>Right, on your own card: it leaves your hand.</li>
+        <li>Right, on another player's card: you then select one of your cards and press <b>Give</b> to hand it to them. Everything pauses until you do (a random card is given after 20 seconds).</li>
+        <li>Wrong: the card goes back where it was and you take a penalty card.</li>
       </ul>
-      <h3>Ties</h3>
-      <p>After the last turn, the sticking window lasts as long as the turn timer. With no timer, the cards are revealed once everyone presses No more sticks. The Cambrio caller wins ties. Any other tie goes to the player with the lowest single card.</p>
-      <p>Private rooms can switch on extra help: Photographic memory (cards you have seen stay face up), Card notes (select cards, then press Note) and a Card counter (cards left, under the log).</p>
-      <h3>Card values</h3>
-      <p>Joker 0, Red King −1, Ace 1, 2–10 face value, Jack 11, Queen 12, Black King 13.</p>
+
+      <h3>Timers</h3>
+      <p>The host can set a turn timer (quick play uses 30 seconds). It restarts after every action on your turn. If it runs out, your turn is skipped and a drawn card is discarded without its power. Timers pause while someone owes a card.</p>
+
+      <h3>End of the round</h3>
+      <p>After the last turn there's one last chance to stick. It ends when the turn timer runs out, or sooner once everyone presses <b>No more sticks</b> (with no timer, only when everyone has pressed it). Then all cards are shown. The Cambrio caller wins ties. Any other tie goes to the player with the lowest single card.</p>
+
+      <h3>Game options (private rooms)</h3>
+      <p>The host can switch any of these on in the lobby:</p>
+      <ul>
+        <li><b>Photographic memory:</b> cards you have seen stay face up for you.</li>
+        <li><b>Card notes:</b> select one or more cards, then press <b>✎ Note</b> (or hold a card for half a second). Tap a rank <b>once for isn't</b> (red, crossed out) and <b>twice for is</b> (green); a third tap clears it. You can also mark who knows the card. Press <b>Apply</b>. With one card selected you edit that card's note; with several, the note is added to each. Only you see your notes, and they follow the card when it moves.</li>
+        <li><b>Card counter:</b> a <b>Cards left</b> button under the log shows how many of each card haven't been discarded yet.</li>
+        <li><b>Score tracker:</b> a line under your hand adds up the cards you can see or have noted as exactly one rank.</li>
+        <li><b>Emoji reactions:</b> tap the 😀 button in the corner and pick an emoji. It floats up from your seat for everyone.</li>
+        <li><b>Stick reaction time:</b> every correct stick shows how many seconds it took after the card landed on the pile.</li>
+        <li><b>Round replay:</b> when the round ends, press <b>▶ Watch replay</b> to step through every move again with all cards face up.</li>
+        <li><b>Bots:</b> the host gets an <b>+ Add a bot</b> button in the lobby. Bots only use cards they have really seen, and the host can remove them with ✕.</li>
+      </ul>
+      <p>The host can also pick <b>Play to</b> 50 or 100 points. Rounds keep going and totals add up; once anyone reaches the target, the lowest total wins the match and the next game starts a new match from zero.</p>
+
+      <h3>Coming back</h3>
+      <p>If you lose connection or close the page, open the site again and press <b>Rejoin</b> on the main screen. You keep your seat and your cards. If you're away on your turn, it is skipped.</p>
+
+      <h3>Tutorial and looks</h3>
+      <p>The <b>Tutorial</b> button on the main screen walks through a turn step by step. Under <b>Customise</b> you can pick one of four card backs and four table colours. Only you see your choice, and it is saved on this device.</p>
+
+      <h3>Quick play</h3>
+      <p>Get matched with random players. A game starts straight away with 4 players, or with 2 or 3 once nobody new has joined for 10 seconds.</p>
       <form method="dialog"><button class="primary">Got it</button></form>
     </div>
   </dialog>
