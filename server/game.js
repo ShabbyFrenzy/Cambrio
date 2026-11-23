@@ -37,8 +37,9 @@ const MAX_PLAYERS = 8;
 //   remember: cards you have seen stay face up for you.
 //   notes:    you can mark cards with what they are/aren't and who knows them.
 //   counter:  shows how many of each card have not been discarded yet.
+//   tracker:  adds up the cards in your hand that you can see or have noted (shown by the client).
 // hard: you can write notes on cards and see which cards have not been discarded yet.
-const OPTIONS = ['remember', 'notes', 'counter'];
+const OPTIONS = ['remember', 'notes', 'counter', 'tracker'];
 // Lowest to highest value: red K (-1), Joker (0), A ... Q, black K (13).
 const NOTE_RANKS = ['K-red', 'JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-black'];
 

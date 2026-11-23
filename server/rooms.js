@@ -41,7 +41,7 @@ function createRoom() {
     game: null,
     handSize: 4,
     turnSeconds: 0, // 0 = no turn timer
-    options: { remember: false, notes: false, counter: false }, // extra help, private rooms only
+    options: { remember: false, notes: false, counter: false, tracker: false }, // extra help, private rooms only
     maxPlayers: MAX_PLAYERS, // host can lower this for private rooms
     round: 0,
     createdAt: Date.now(),

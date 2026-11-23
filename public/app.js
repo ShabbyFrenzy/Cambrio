@@ -472,6 +472,7 @@
     ['remember', 'Photographic memory', 'Cards you have seen stay face up for you.'],
     ['notes', 'Card notes', "Mark what a card is or isn't, and who knows it."],
     ['counter', 'Card counter', "See how many of each card haven't been discarded."],
+    ['tracker', 'Score tracker', 'Adds up the cards in your hand that you can see or have noted.'],
   ];
   const opt = (g, k) => !!(g.options && g.options[k]);
 
@@ -583,7 +584,7 @@
         <div class="seat-head"><span class="dot ${p.connected ? '' : 'off'}"></span>${esc(isMe ? `${p.name} (you)` : p.name)}${p.connected ? '' : ' <span class="muted">· away</span>'} ${tags.join('')}${timerOn ? `<span class="turn-secs">${Math.ceil(turnLeft() / 1000)}s</span>` : ''}</div>
         <div class="hand ${cols}">${cards}</div>
         <div class="turn-bar ${timerOn ? '' : 'off'}"><div class="turn-fill" style="width:${timerOn ? turnPct() : 0}%"></div></div>
-        ${isMe && g.phase !== 'ended' ? trackerHtml(g, p) : ''}
+        ${isMe && g.phase !== 'ended' && opt(g, 'tracker') ? trackerHtml(g, p) : ''}
       </div>`;
   }
 

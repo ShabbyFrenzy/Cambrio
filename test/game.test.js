@@ -444,8 +444,8 @@ test('rooms: options are host-only and passed to the game', () => {
   assert.throws(() => rooms.setOption(room.code, 'h', 'silly', true));
   rooms.setOption(room.code, 'h', 'notes', true);
   rooms.setOption(room.code, 'h', 'remember', true);
-  assert.deepStrictEqual(rooms.view(room).options, { remember: true, notes: true, counter: false });
-  assert.deepStrictEqual(rooms.startGame(room.code).options, { remember: true, notes: true, counter: false });
+  assert.deepStrictEqual(rooms.view(room).options, { remember: true, notes: true, counter: false, tracker: false });
+  assert.deepStrictEqual(rooms.startGame(room.code).options, { remember: true, notes: true, counter: false, tracker: false });
 });
 
 test('peek countdown: cards flip down for everyone when it runs out', () => {

@@ -52,6 +52,7 @@ Open two browser windows (or one normal and one private window) to play against 
   - Photographic memory: once you have seen a card, it stays face up for you wherever it moves.
   - Card notes: select cards (tap one, or hold and drag across several), press Note (or long-press a card), pick the ranks it isn't (one tap) or is (two taps) and who knows it, then Apply. With one card you edit that card's note. Only you see your notes, and they follow the card.
   - Card counter: a Cards left button under the log shows how many of each card have not been discarded yet.
+  - Score tracker: a line under your hand adds up the cards you can see or have noted as one rank.
 - After the final turn, the sticking window lasts as long as the turn timer, or ends sooner once everyone presses "No more sticks". With no timer, it ends when everyone has pressed it.
 - The Cambrio caller wins ties. Any other tie goes to the player with the lowest single card (a player with no cards left counts as lowest). If that also ties, they share the win.
 
