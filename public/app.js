@@ -459,6 +459,7 @@
 
   // ---------- home ----------
   function renderHome(prefillCode = '') {
+    document.body.classList.remove('ingame');
     document.getElementById('roomBadge').hidden = true;
     const name = store.get('cambioName') || '';
     const lastRoom = store.get('cambrioLastRoom') || '';
@@ -866,6 +867,25 @@
       </div>`;
   }
 
+  // Seats around the table, like a poker table. You sit at the bottom; play goes
+  // clockwise, so the next player sits on your left, then across the top, then the right.
+  const RING_SPLIT = { 0: [0, 0, 0], 1: [0, 1, 0], 2: [1, 0, 1], 3: [1, 1, 1], 4: [1, 2, 1], 5: [2, 1, 2], 6: [2, 2, 2], 7: [2, 3, 2] };
+  function seatRing(opponents) {
+    const [l, t] = RING_SPLIT[Math.min(opponents.length, 7)];
+    const left = opponents.slice(0, l);
+    const top = opponents.slice(l, l + t);
+    const right = opponents.slice(l + t);
+    const cls = [`seats-${opponents.length}`, top.length ? '' : 'no-top', left.length ? '' : 'no-sides'].join(' ');
+    // On wide screens every seat sits at an even angle round the oval (you at the bottom).
+    const total = opponents.length + 1;
+    const spot = (p) => {
+      const k = opponents.indexOf(p) + 1;
+      const a = ((90 + (k * 360) / total) * Math.PI) / 180;
+      return `--x:${(50 + 42 * Math.cos(a)).toFixed(2)}%;--y:${(50 + 40 * Math.sin(a)).toFixed(2)}%`;
+    };
+    return { left, top, right, cls, spot };
+  }
+
   function renderGame(room) {
     const g = room.game;
     const me = room.you;
@@ -899,6 +919,7 @@
     const myIdx = g.players.findIndex((p) => p.id === me);
     const ordered = myIdx === -1 ? g.players : g.players.slice(myIdx + 1).concat(g.players.slice(0, myIdx));
     const opponents = ordered.filter((p) => p.id !== me);
+    const ring = seatRing(opponents);
     const mine = g.players[myIdx];
 
     const myTurn = g.current === me;
@@ -922,7 +943,10 @@
     app.innerHTML = `
       <section class="table ${showPanel ? 'playing' : ''}">
         <div class="play-area">
-          <div class="opponents">${opponents.map((p) => seatHtml(g, p, me, false)).join('')}</div>
+          <div class="ring ${ring.cls}">
+          <div class="opponents ring-left">${ring.left.map((p) => `<div class="spot" style="${ring.spot(p)}">${seatHtml(g, p, me, false)}</div>`).join('')}</div>
+          <div class="opponents ring-top">${ring.top.map((p) => `<div class="spot" style="${ring.spot(p)}">${seatHtml(g, p, me, false)}</div>`).join('')}</div>
+          <div class="opponents ring-right">${ring.right.map((p) => `<div class="spot" style="${ring.spot(p)}">${seatHtml(g, p, me, false)}</div>`).join('')}</div>
           <div class="mid">
           <div class="center-row">
             <div class="pile">${g.deckCount ? cardHtml({ hidden: true }, { clickable: canDraw, key: 'deck', data: { do: 'draw' } }) : cardHtml(null, { key: 'deck' })}<span>Deck · ${g.deckCount}</span></div>
@@ -935,6 +959,7 @@
           ${noteBarHtml(g)}
           </div>
           <div class="mine">${mine ? seatHtml(g, mine, me, true) : '<p class="center muted">You are watching this game. You can play from the next round.</p>'}</div>
+          </div>
         </div>
         <aside class="side">
           <div class="log" id="log"><h3>What happened</h3>${g.log.map((l) => `<p>${esc(l.text)}</p>`).join('')}</div>
@@ -1199,6 +1224,7 @@
     const badge = document.getElementById('roomBadge');
     badge.hidden = false;
     badge.innerHTML = `Room <b>${esc(S.room.code)}</b>`;
+    document.body.classList.toggle('ingame', !!S.room.game); // dim the room around the table
     if (!S.room.game) renderLobby(S.room);
     else renderGame(S.room);
   }
