@@ -886,6 +886,17 @@
     return { left, top, right, cls, spot };
   }
 
+  // Wide screens: shrink the whole table evenly so it fits the window's height.
+  const TABLE_HEIGHT = 760 + 44 + 110; // the oval plus room for seats above and below it (style.css)
+  function fitTable() {
+    const area = app.querySelector('.play-area');
+    if (!area) return;
+    const wide = matchMedia('(min-width: 1180px)').matches;
+    const z = wide ? Math.min(1, (innerHeight - 64) / TABLE_HEIGHT) : 1;
+    area.style.zoom = z < 0.999 ? Math.max(0.6, z).toFixed(3) : '';
+  }
+  addEventListener('resize', fitTable);
+
   function renderGame(room) {
     const g = room.game;
     const me = room.you;
@@ -1226,7 +1237,7 @@
     badge.innerHTML = `Room <b>${esc(S.room.code)}</b>`;
     document.body.classList.toggle('ingame', !!S.room.game); // dim the room around the table
     if (!S.room.game) renderLobby(S.room);
-    else renderGame(S.room);
+    else { renderGame(S.room); fitTable(); }
   }
 
   document.getElementById('rulesBtn').onclick = () => document.getElementById('rulesDialog').showModal();
