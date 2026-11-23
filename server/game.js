@@ -37,9 +37,13 @@ const MAX_PLAYERS = 8;
 //   remember: cards you have seen stay face up for you.
 //   notes:    you can mark cards with what they are/aren't and who knows them.
 //   counter:  shows how many of each card have not been discarded yet.
+//   tracker:  adds up the cards in your hand that you can see or have noted (shown by the client).
 // hard: you can write notes on cards and see which cards have not been discarded yet.
-const OPTIONS = ['remember', 'notes', 'counter'];
-const NOTE_RANKS = ['JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-red', 'K-black'];
+const OPTIONS = ['remember', 'notes', 'counter', 'tracker'];
+// Lowest to highest value: red K (-1), Joker (0), A ... Q, black K (13).
+const NOTE_RANKS = ['K-red', 'JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-black'];
+
+const byValue = (ranks) => ranks.slice().sort((a, b) => NOTE_RANKS.indexOf(a) - NOTE_RANKS.indexOf(b));
 
 function isRed(card) {
   return RED.has(card.suit);
@@ -476,7 +480,7 @@ class Game {
     const knows = ids(a.knows);
     if (replace) {
       if (cards.length !== 1) throw new GameError('Edit one card at a time');
-      if (is.length || not.length || knows.length) notes.set(cards[0], { is, not, knows });
+      if (is.length || not.length || knows.length) notes.set(cards[0], { is: byValue(is), not: byValue(not), knows });
       else notes.delete(cards[0]);
       return {};
     }
@@ -484,8 +488,8 @@ class Game {
     for (const c of cards) {
       const old = notes.get(c) || { is: [], not: [], knows: [] };
       const next = {
-        is: [...new Set([...old.is.filter((r) => !not.includes(r)), ...is])],
-        not: [...new Set([...old.not.filter((r) => !is.includes(r)), ...not])],
+        is: byValue([...new Set([...old.is.filter((r) => !not.includes(r)), ...is])]),
+        not: byValue([...new Set([...old.not.filter((r) => !is.includes(r)), ...not])]),
         knows: [...new Set([...(old.knows || []), ...knows])],
       };
       notes.set(c, next);
@@ -674,11 +678,9 @@ class Game {
   tryFinish() {
     if (this.phase !== 'play' || this.stage !== 'closing') return false;
     if (Object.keys(this.pendingGive).length) return false; // wait for the give
-    if (this.closingUntil !== null) {
-      if (this.now() < this.closingUntil) return false;
-    } else if (!this.players.every((p) => this.doneSticking.has(p.id) || !p.connected)) {
-      return false;
-    }
+    // Ends when everyone has pressed "No more sticks", or when the timer (if any) runs out.
+    const allDone = this.players.every((p) => this.doneSticking.has(p.id) || !p.connected);
+    if (!allDone && (this.closingUntil === null || this.now() < this.closingUntil)) return false;
     this.finish();
     this.seq++;
     return true;

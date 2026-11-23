@@ -227,6 +227,13 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
   .log { max-height: 200px; }
 }
 @media (max-width: 520px) {
+  /* Phones: the action buttons sit in a bar at the bottom of the screen, within thumb reach. */
+  .table.playing { padding-bottom: 150px; }
+  .table.playing .action-panel { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; width: auto;
+    grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    background: rgba(8, 34, 23, .97); border-top: 1px solid rgba(255,255,255,.12); box-shadow: 0 -6px 20px rgba(0,0,0,.35); }
+  .table.playing .action-panel .act { font-size: 13px; padding: 10px 2px; }
+  .table.playing .action-panel > :last-child { grid-column: span 4; }
   .center-row { gap: 6px; flex-wrap: nowrap; }
   .action-panel { width: 136px; gap: 4px; flex: none; }
   .action-panel .act { font-size: 11.5px; padding: 6px 2px; }
@@ -310,3 +317,10 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 .game-options label.toggle { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; margin: 0; }
 .game-options label.toggle input { flex: none; }
 .game-options label.toggle span { display: block; }
+
+/* Score tracker under your hand; the timer bar keeps its space so nothing jumps */
+.turn-bar.off { visibility: hidden; }
+.tracker { margin-top: 6px; font-size: 13px; color: var(--muted); text-align: center; }
+.tracker b { color: var(--ink); }
+.tracker b.noted { color: #4cd187; }
+.tracker .q { color: rgba(255,255,255,.45); }

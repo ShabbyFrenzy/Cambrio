@@ -444,8 +444,8 @@ test('rooms: options are host-only and passed to the game', () => {
   assert.throws(() => rooms.setOption(room.code, 'h', 'silly', true));
   rooms.setOption(room.code, 'h', 'notes', true);
   rooms.setOption(room.code, 'h', 'remember', true);
-  assert.deepStrictEqual(rooms.view(room).options, { remember: true, notes: true, counter: false });
-  assert.deepStrictEqual(rooms.startGame(room.code).options, { remember: true, notes: true, counter: false });
+  assert.deepStrictEqual(rooms.view(room).options, { remember: true, notes: true, counter: false, tracker: false });
+  assert.deepStrictEqual(rooms.startGame(room.code).options, { remember: true, notes: true, counter: false, tracker: false });
 });
 
 test('peek countdown: cards flip down for everyone when it runs out', () => {
@@ -512,4 +512,25 @@ test('notes: editing one card replaces its note exactly', () => {
   g.act('a', { type: 'note', targets: [t], add: {}, replace: true });
   assert.strictEqual(g.view('a').players[1].slots[0].note, undefined);
   assert.throws(() => g.act('a', { type: 'note', targets: [t, { pid: 'a', slot: 0 }], add: {}, replace: true }), /one card/);
+});
+
+test('with a turn timer, the last-chance window also ends once everyone presses No more sticks', () => {
+  let now = 0;
+  const hands = [[C('A'), C('2'), C('3'), C('4')], [C('5'), C('6'), C('7'), C('8')]];
+  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { deck: rigged(hands, [C('9', 'H')]), now: () => now, turnMs: 10000 });
+  g.act('a', { type: 'ready' }); g.act('b', { type: 'ready' });
+  g.act('a', { type: 'call_cambio' });
+  g.act('b', { type: 'draw_deck' }); g.act('b', { type: 'swap', slot: 0 });
+  assert.strictEqual(g.view('a').closingMsLeft, 10000);
+  g.act('a', { type: 'done_sticking' });
+  assert.strictEqual(g.phase, 'play');
+  now = 2000;
+  g.act('b', { type: 'done_sticking' });
+  assert.strictEqual(g.phase, 'ended');
+});
+
+test('notes are kept in order from lowest to highest value', () => {
+  const g = modeGame('hard', [C('9', 'H')]);
+  g.act('a', { type: 'note', targets: [{ pid: 'b', slot: 0 }], add: { not: ['K-black', '7', 'JOKER', 'A', 'K-red'] } });
+  assert.deepStrictEqual(g.view('a').players[1].slots[0].note.not, ['K-red', 'JOKER', 'A', '7', 'K-black']);
 });
