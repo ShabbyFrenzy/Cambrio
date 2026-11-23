@@ -32,6 +32,10 @@ const MIN_PLAYERS = 2;
 const TURN_TIMER_CHOICES = [0, 10, 15, 20, 30, 60]; // seconds; 0 = no timer
 const GIVE_TIMEOUT_MS = 20000; // the server gives a random card if a sticker takes longer
 const MAX_PLAYERS = 8;
+// Private rooms can pick a mode. easy: cards you have seen stay face up for you.
+// hard: you can write notes on cards and see which cards have not been discarded yet.
+const MODES = ['easy', 'normal', 'hard'];
+const NOTE_RANKS = ['JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
 function isRed(card) {
   return RED.has(card.suit);
@@ -106,6 +110,9 @@ class Game {
     this.turnDeadline = null;
     this.pauseStart = null; // set while everyone waits for a sticker to give a card
     this.doneSticking = new Set(); // no-timer games: who pressed "No more sticks"
+    this.mode = MODES.includes(opts.mode) ? opts.mode : 'normal';
+    this.known = new Map(); // playerId -> Set of card objects that player has seen (easy mode)
+    this.notes = new Map(); // playerId -> Map card object -> {is:[], not:[]} (hard mode)
     this.deck = opts.deck ? opts.deck.slice() : shuffle(buildDeck(), this.rng);
     this.discard = [];
     this.players = players.map((p) => ({
@@ -133,10 +140,31 @@ class Game {
     this.fx = []; // animation events for the latest action (see view())
     this.fxSeq = 0;
     this.awaiting = new Set(); // players the peek phase waits for (matchmade rooms)
+    for (const p of this.players) {
+      this.known.set(p.id, new Set(this.peekSlots.map((i) => p.hand[i]).filter(Boolean)));
+      this.notes.set(p.id, new Map());
+    }
     this.addLog(`Everyone peeks at their bottom ${this.peekSlots.length === 3 ? 'three' : 'two'} cards.`);
   }
 
   // ---------- helpers ----------
+  // Easy mode: remember that a player has seen a card (it follows the card wherever it moves).
+  learn(pid, card) {
+    if (!card) return;
+    const set = this.known.get(pid);
+    if (set) set.add(card);
+  }
+
+  learnAll(card) {
+    for (const p of this.players) this.learn(p.id, card);
+  }
+
+  // Cards shuffled back into the deck are unknown again.
+  forget(cards) {
+    for (const set of this.known.values()) for (const c of cards) set.delete(c);
+    for (const m of this.notes.values()) for (const c of cards) m.delete(c);
+  }
+
   addLog(text) {
     this.log.push({ n: this.log.length, text });
     if (this.log.length > 200) this.log.shift();
@@ -169,6 +197,7 @@ class Game {
       // Reshuffle the discard pile, keeping the top card.
       const top = this.discard.pop();
       this.deck = shuffle(this.discard, this.rng);
+      this.forget(this.deck);
       this.discard = top ? [top] : [];
       this.addLog('The deck ran out, so the discard pile was shuffled into a new deck.');
     }
@@ -199,11 +228,12 @@ class Game {
       stick: this.stick,
       give: this.give,
       done_sticking: this.doneStick,
+      note: this.setNote,
     }[action.type];
     if (!handler) throw new GameError('Unknown action');
     // Everything pauses while someone owes a card after sticking.
     const owing = Object.keys(this.pendingGive);
-    if (owing.length && !(action.type === 'give' && this.pendingGive[pid])) {
+    if (owing.length && action.type !== 'note' && !(action.type === 'give' && this.pendingGive[pid])) {
       throw new GameError(`Wait for ${this.name(owing[0])} to give a card`);
     }
     this.fx = [];
@@ -243,6 +273,8 @@ class Game {
     this.drawn = card;
     this.drawnFrom = 'deck';
     this.stage = 'hold';
+    this.learn(pid, card);
+    this.startTurnClock(); // every action restarts the turn timer
     this.move({ zone: 'deck' }, { zone: 'drawn' });
     this.addLog(`${this.name(pid)} drew from the deck.`);
   }
@@ -271,7 +303,7 @@ class Game {
     if (power) {
       this.stage = 'power';
       this.power = { type: power, step: power === 'lookSwap' ? 'look' : 'pick', revealed: null };
-      this.startTurnClock(); // a fresh countdown for using the power
+      this.startTurnClock(); // every action restarts the turn timer
     } else {
       this.endTurn();
     }
@@ -301,7 +333,11 @@ class Game {
   powerPick(pid, { targets }) {
     this.requireTurn(pid, 'power');
     const pw = this.power;
-    const reveal = (ts) => [{
+    const reveal = (ts) => {
+      ts.forEach((t) => this.learn(pid, this.cardAt(t.pid, t.slot)));
+      return revealList(ts);
+    };
+    const revealList = (ts) => [{
       to: pid,
       cards: ts.map((t) => ({ pid: t.pid, slot: t.slot, card: this.cardAt(t.pid, t.slot) })),
     }];
@@ -344,6 +380,7 @@ class Game {
       const reveals = reveal(targets);
       pw.step = 'swap';
       pw.revealed = reveals[0].cards;
+      this.startTurnClock();
       return { reveals };
     }
 
@@ -389,12 +426,28 @@ class Game {
     }
     // Wrong: the card goes back where it was and the sticker takes a penalty card.
     const penalty = this.drawFromDeck();
+    this.learnAll(card); // it was shown to the whole table before going back
     this.fx.push({ kind: 'stick', by: pid, at: { pid: t.pid, slot: t.slot }, card, ok: false });
     if (penalty) {
       p.hand.push(penalty);
       this.move({ zone: 'deck' }, { pid, slot: p.hand.length - 1 });
     }
     this.addLog(`${p.name} tried to stick ${whose} ${cardLabel(card)} on a ${cardLabel(top)}. Wrong! The card goes back and ${p.name} takes a penalty card.`);
+    return {};
+  }
+
+  // Hard mode: mark what a card is or isn't. note = {is:[ranks], not:[ranks]}; empty clears it.
+  setNote(pid, { target, note }) {
+    if (this.mode !== 'hard') throw new GameError('Notes are only in hard mode');
+    if (this.phase === 'ended') throw new GameError('The game is over');
+    if (!this.known.has(pid)) throw new GameError('You are not in this game');
+    const card = this.cardAt(target && target.pid, target && target.slot);
+    const clean = (list) => [...new Set(Array.isArray(list) ? list : [])].filter((r) => NOTE_RANKS.includes(r));
+    const is = clean(note && note.is);
+    const not = clean(note && note.not).filter((r) => !is.includes(r));
+    const notes = this.notes.get(pid);
+    if (is.length || not.length) notes.set(card, { is, not });
+    else notes.delete(card);
     return {};
   }
 
@@ -641,12 +694,30 @@ class Game {
     this.addLog(`Game over! ${names} win${winners.length === 1 ? 's' : ''} with ${best} point${best === 1 ? '' : 's'}.`);
   }
 
+  // Hard mode: how many of each card are not in the discard pile (still in the deck or in hands).
+  unplayedCounts() {
+    const counts = {};
+    const add = (c) => {
+      if (!c) return;
+      const k = c.rank === 'K' ? (isRed(c) ? 'K-red' : 'K-black') : c.rank;
+      counts[k] = (counts[k] || 0) + 1;
+    };
+    this.deck.forEach(add);
+    this.players.forEach((p) => p.hand.forEach(add));
+    add(this.drawn);
+    return counts;
+  }
+
   // ---------- per-player view ----------
   view(pid) {
     const ended = this.phase === 'ended';
     const cur = this.phase === 'play' && this.stage !== 'closing' ? this.current() : null;
     const me = this.players.find((p) => p.id === pid);
+    const knownByMe = this.known.get(pid);
+    const notesByMe = this.mode === 'hard' ? this.notes.get(pid) : null;
     return {
+      mode: this.mode,
+      unplayed: this.mode === 'hard' && !ended ? this.unplayedCounts() : null,
       seq: this.seq,
       handSize: this.handSize,
       peekCount: this.peekSlots.length,
@@ -660,7 +731,9 @@ class Game {
           if (!c) return null;
           if (ended) return c;
           if (this.phase === 'peek' && p.id === pid && this.peekSlots.includes(i)) return c;
-          return { hidden: true };
+          if (this.mode === 'easy' && this.phase === 'play' && knownByMe && knownByMe.has(c)) return { ...c, known: true };
+          const note = notesByMe && notesByMe.get(c);
+          return note ? { hidden: true, note } : { hidden: true };
         }),
       })),
       current: cur ? cur.id : null,
@@ -697,5 +770,5 @@ class Game {
 
 module.exports = {
   Game, GameError, buildDeck, cardValue, cardPower, cardLabel,
-  TURN_TIMER_CHOICES, GIVE_TIMEOUT_MS, HAND_SIZE, HAND_SIZES, MIN_PLAYERS, MAX_PLAYERS, MAX_PLAYERS_BY_HAND, INITIAL_PEEK_SLOTS, PEEK_SLOTS,
+  TURN_TIMER_CHOICES, GIVE_TIMEOUT_MS, MODES, NOTE_RANKS, HAND_SIZE, HAND_SIZES, MIN_PLAYERS, MAX_PLAYERS, MAX_PLAYERS_BY_HAND, INITIAL_PEEK_SLOTS, PEEK_SLOTS,
 };

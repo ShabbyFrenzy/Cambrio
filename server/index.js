@@ -186,6 +186,12 @@ io.on('connection', (socket) => {
     broadcast(room);
   }));
 
+  socket.on('set_mode', safe(socket, ({ value }) => {
+    const room = currentRoom(socket);
+    rooms.setMode(room.code, socket.data.playerId, value);
+    broadcast(room);
+  }));
+
   socket.on('set_max_players', safe(socket, ({ value }) => {
     const room = currentRoom(socket);
     rooms.setMaxPlayers(room.code, socket.data.playerId, value);

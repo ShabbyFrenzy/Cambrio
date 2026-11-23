@@ -274,6 +274,8 @@
       if (card.suit === 'H' || card.suit === 'D') cls.push('red');
       inner = `<span class="rank">${card.rank}</span><span class="suit-sm">${SUIT[card.suit]}</span><span class="pip">${SUIT[card.suit]}</span>`;
     }
+    if (card && card.known) cls.push('known'); // easy mode: a card you have seen before
+    if (card && card.note) inner += noteHtml(card.note);
     if (o.ghost) { cls.length = 0; cls.push('card', 'ghost'); inner = ''; }
     if (o.clickable) cls.push('clickable');
     if (o.selected) cls.push('selected');
@@ -287,6 +289,15 @@
     const label = card && !card.hidden ? (card.rank === 'JOKER' ? 'Joker' : card.rank + SUIT[card.suit]) : card === null ? 'empty' : 'face-down card';
     const role = o.clickable ? ' role="button" tabindex="0"' : '';
     return `<div class="${cls.join(' ')}"${data}${role} aria-label="${label}">${inner}</div>`;
+  }
+
+  // Hard mode notes: ranks a card is (green) or isn't (red, crossed out).
+  const NOTE_RANKS = ['JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  const rankShort = (r) => (r === 'JOKER' ? 'Jk' : r);
+  function noteHtml(note) {
+    const is = (note.is || []).map((r) => `<i class="is">${rankShort(r)}</i>`).join('');
+    const not = (note.not || []).map((r) => `<i class="not">${rankShort(r)}</i>`).join('');
+    return `<span class="note">${is}${not}</span>`;
   }
 
   // ---------- home ----------
@@ -389,6 +400,13 @@
               ? `<select id="turnTimer" data-do="turntimer">${room.turnChoices.map((n) => `<option value="${n}" ${n === room.turnSeconds ? 'selected' : ''}>${n ? `${n} seconds` : 'Off'}</option>`).join('')}</select>`
               : `<b>${room.turnSeconds ? `${room.turnSeconds} seconds` : 'Off'}</b>`}
           </div>
+          ${room.isPublic ? '' : `<div class="option-row">
+            <span class="muted">Mode</span>
+            ${isHost
+              ? MODES.map(([m, label]) => `<button class="${room.mode === m ? 'primary' : 'secondary'} small" data-do="mode" data-mode="${m}" aria-pressed="${room.mode === m}">${label}</button>`).join('')
+              : `<b>${MODES.find(([m]) => m === room.mode)[1]}</b>`}
+          </div>
+          <p class="center muted small-note">${MODE_NOTES[room.mode]}</p>`}
           <p class="center muted small-note">${room.turnSeconds
             ? `Each turn has ${room.turnSeconds} seconds. After the last turn there are ${room.turnSeconds} seconds to stick.`
             : 'No turn timer. After the last turn, the round ends when everyone presses "No more sticks".'}</p>
@@ -412,10 +430,20 @@
     if (maxSel) maxSel.onchange = () => call('set_max_players', { value: Number(maxSel.value) });
     const timerSel = app.querySelector('[data-do="turntimer"]');
     if (timerSel) timerSel.onchange = () => call('set_turn_timer', { value: Number(timerSel.value) });
+    app.querySelectorAll('[data-do="mode"]').forEach((b) => {
+      b.onclick = () => call('set_mode', { value: b.dataset.mode });
+    });
     app.querySelectorAll('[data-do="handsize"]').forEach((b) => {
       b.onclick = () => call('set_hand_size', { size: Number(b.dataset.size) });
     });
   }
+
+  const MODES = [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']];
+  const MODE_NOTES = {
+    easy: 'Easy: once you have seen a card, it stays face up for you.',
+    normal: 'Normal: remember your cards yourself.',
+    hard: 'Hard: no help remembering, but you can mark cards with notes and check which cards are left.',
+  };
 
   async function copy(text, msg) {
     try { await navigator.clipboard.writeText(text); toast(msg); }
@@ -678,10 +706,12 @@
           </div>
           ${resultsHtml(g, room)}
           ${g.phase !== 'ended' ? `<div class="prompt">${promptHtml(g, me)}</div>` : ''}
+          ${noteBarHtml(g)}
           <div class="mine">${mine ? seatHtml(g, mine, me, true) : '<p class="center muted">You are watching this game. You can play from the next round.</p>'}</div>
         </div>
         <aside class="side">
           <div class="log" id="log"><h3>What happened</h3>${g.log.map((l) => `<p>${esc(l.text)}</p>`).join('')}</div>
+          ${cardsLeftHtml(g)}
           ${totals}
           ${g.phase !== 'ended' ? `<button class="ghost small" data-do="leave">${confirming('leave') ? 'Tap again to leave' : 'Leave room'}</button>` : ''}
         </aside>
@@ -689,6 +719,38 @@
     const log = document.getElementById('log');
     log.scrollTop = log.scrollHeight;
     if (g.phase === 'ended') S.endShownRound = room.round;
+  }
+
+  // Hard mode: with one card selected, tap a rank once for "it is", twice for "it isn't", again to clear.
+  function noteBarHtml(g) {
+    if (g.mode !== 'hard' || g.phase !== 'play' || S.selected.length !== 1) return '';
+    const t = S.selected[0];
+    const c = cardAtView(g, t);
+    if (!c || !c.hidden) return '';
+    const note = c.note || { is: [], not: [] };
+    const owner = t.pid === S.room.you ? 'your' : `${nameIn(g, t.pid)}'s`;
+    const chips = NOTE_RANKS.map((r) => {
+      const st = note.is.includes(r) ? 'is' : note.not.includes(r) ? 'not' : '';
+      return `<button class="chip ${st}" data-do="note" data-rank="${r}" aria-label="${r}${st ? (st === 'is' ? ' (is)' : ' (is not)') : ''}">${rankShort(r)}</button>`;
+    }).join('');
+    return `<div class="note-bar"><span class="muted">Note on ${owner} card #${t.slot + 1}: tap once for <b class="is">is</b>, twice for <b class="not">isn't</b></span>
+      <div class="chips">${chips}${note.is.length || note.not.length ? '<button class="chip clear" data-do="noteclear">Clear</button>' : ''}</div></div>`;
+  }
+
+  // Hard mode: how many of each card have not been discarded yet.
+  const LEFT_ORDER = [['JOKER', 'Joker', 2], ['A', 'A', 4], ['2', '2', 4], ['3', '3', 4], ['4', '4', 4], ['5', '5', 4], ['6', '6', 4],
+    ['7', '7', 4], ['8', '8', 4], ['9', '9', 4], ['10', '10', 4], ['J', 'J', 4], ['Q', 'Q', 4], ['K-red', 'K ♥♦', 2], ['K-black', 'K ♠♣', 2]];
+  function cardsLeftHtml(g) {
+    if (g.mode !== 'hard' || !g.unplayed) return '';
+    const open = !!S.showLeft;
+    const rows = LEFT_ORDER.map(([k, label, total]) => {
+      const n = g.unplayed[k] || 0;
+      return `<div class="left-cell ${n ? '' : 'gone'}"><b>${label}</b><span>${n}/${total}</span></div>`;
+    }).join('');
+    return `<div class="cards-left">
+      <button class="secondary small" data-do="cardsleft" aria-expanded="${open}">${open ? 'Hide cards left' : 'Cards left'}</button>
+      ${open ? `<p class="muted small-note">Cards not discarded yet (still in the deck or in someone's hand).</p><div class="left-grid">${rows}</div>` : ''}
+    </div>`;
   }
 
   function discardHtml(g, popDiscard) {
@@ -752,6 +814,21 @@
     }
     if (d === 'skip') { S.selected = []; return act('skip_power'); }
     if (d === 'done') return act('done_sticking');
+    if (d === 'cardsleft') { S.showLeft = !S.showLeft; return render(); }
+    if (d === 'note' || d === 'noteclear') {
+      const t = S.selected[0];
+      const c = t && cardAtView(g, t);
+      if (!c) return;
+      const note = { is: [...((c.note && c.note.is) || [])], not: [...((c.note && c.note.not) || [])] };
+      if (d === 'noteclear') { note.is = []; note.not = []; }
+      else {
+        const r = el.dataset.rank;
+        if (note.is.includes(r)) { note.is = note.is.filter((x) => x !== r); note.not.push(r); }
+        else if (note.not.includes(r)) note.not = note.not.filter((x) => x !== r);
+        else note.is.push(r);
+      }
+      return act('note', { target: { pid: t.pid, slot: t.slot }, note });
+    }
     if (d === 'cambio') {
       if (!confirming('cambio')) return askToConfirm('cambio');
       S.confirm = null;

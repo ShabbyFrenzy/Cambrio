@@ -34,7 +34,7 @@
     <p>Looking for players…</p>
     <div class="dots" id="dots"></div>
     <p class="big" id="timer">0:00</p>
-    <p id="detail"></p>
+    <p id="detail" style="color:var(--ink);font-weight:600"></p>
     <button class="secondary" id="leaveBtn">Cancel</button>
   </section>
 
@@ -79,10 +79,24 @@
     const m = Math.floor(s.waitedSec / 60), sec = String(s.waitedSec % 60).padStart(2, '0');
     $('timer').textContent = `${m}:${sec}`;
     $('dots').innerHTML = Array.from({ length: s.idealSize }, (_, i) => `<span class="${i < s.waiting ? 'on' : ''}"></span>`).join('');
-    $('detail').textContent = s.waiting === 1
-      ? 'You are the only one waiting.'
-      : `${s.waiting} players waiting. ${s.needed ? `Need ${s.needed} more to start.` : 'Starting…'}`;
+    startsAt = s.startsInSec == null ? null : Date.now() + s.startsInSec * 1000;
+    lastStatus = s;
+    renderDetail();
   });
+
+  // "Starting in 10 seconds" counts down locally between server updates.
+  let startsAt = null, lastStatus = null;
+  function renderDetail() {
+    const s = lastStatus;
+    if (!s) return;
+    if (s.waiting === 1) { $('detail').textContent = 'You are the only one waiting.'; return; }
+    if (startsAt === null) { $('detail').textContent = `${s.waiting} players waiting.`; return; }
+    const left = Math.max(0, Math.ceil((startsAt - Date.now()) / 1000));
+    $('detail').textContent = left > 0
+      ? `${s.waiting} players waiting. Starting in ${left} second${left === 1 ? '' : 's'}, unless more join.`
+      : `${s.waiting} players waiting. Starting…`;
+  }
+  setInterval(renderDetail, 250);
 
   socket.on('matched', ({ code, players }) => {
     show('matched');
