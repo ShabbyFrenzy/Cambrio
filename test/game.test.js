@@ -414,15 +414,15 @@ test('normal mode hides seen cards and hard mode keeps notes on cards', () => {
 
   const g = modeGame('hard', [C('9', 'H'), C('J', 'H')]);
   assert.ok(g.view('a').players[0].slots.every((c) => c.hidden));
-  g.act('a', { type: 'note', target: { pid: 'b', slot: 1 }, note: { is: ['6', 'X'], not: ['K', '6'] } });
-  assert.deepStrictEqual(g.view('a').players[1].slots[1].note, { is: ['6'], not: ['K'] });
+  g.act('a', { type: 'note', target: { pid: 'b', slot: 1 }, note: { is: ['6', 'X'], not: ['K-black', 'K', '6'] } });
+  assert.deepStrictEqual(g.view('a').players[1].slots[1].note, { is: ['6'], not: ['K-black'] });
   assert.strictEqual(g.view('b').players[1].slots[1].note, undefined); // private
   // The note follows the card when a J/Q swap moves it.
   g.act('a', { type: 'draw_deck' }); g.act('a', { type: 'discard' }); // 9H: peek other
   g.act('a', { type: 'power_pick', targets: [{ pid: 'b', slot: 0 }] });
   g.act('b', { type: 'draw_deck' }); g.act('b', { type: 'discard' }); // JH: swap
   g.act('b', { type: 'power_pick', targets: [{ pid: 'b', slot: 1 }, { pid: 'a', slot: 0 }] });
-  assert.deepStrictEqual(g.view('a').players[0].slots[0].note, { is: ['6'], not: ['K'] });
+  assert.deepStrictEqual(g.view('a').players[0].slots[0].note, { is: ['6'], not: ['K-black'] });
   // Notes work while the table is paused, and clearing removes them.
   g.act('a', { type: 'note', target: { pid: 'a', slot: 0 }, note: {} });
   assert.strictEqual(g.view('a').players[0].slots[0].note, undefined);
@@ -441,4 +441,30 @@ test('rooms: mode is host-only, private only, and passed to the game', () => {
   rooms.setMode(room.code, 'h', 'hard');
   assert.strictEqual(rooms.view(room).mode, 'hard');
   assert.strictEqual(rooms.startGame(room.code).mode, 'hard');
+});
+
+test('peek countdown: cards flip down for everyone when it runs out', () => {
+  let now = 0;
+  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { now: () => now });
+  assert.strictEqual(g.view('a').peekMsLeft, 10000);
+  g.act('a', { type: 'ready' });
+  now = 9999;
+  assert.strictEqual(g.checkPeekTimeout(), false);
+  now = 10000;
+  assert.strictEqual(g.checkPeekTimeout(), true);
+  assert.strictEqual(g.phase, 'play');
+  assert.strictEqual(g.view('a').peekMsLeft, null);
+});
+
+test('quick play: 30 second turns, and the peek countdown waits for everyone to arrive', () => {
+  const rooms = require('../server/rooms');
+  const code = rooms.createRoomWithPlayers([{ playerId: 'x', name: 'X' }, { playerId: 'y', name: 'Y' }], { autoStart: true });
+  const g = rooms.getRoom(code).game;
+  assert.strictEqual(g.turnMs, 30000);
+  assert.strictEqual(g.view('x').peekMsLeft, null);
+  assert.strictEqual(g.checkPeekTimeout(), false);
+  g.setConnected('x', true);
+  assert.strictEqual(g.view('x').peekMsLeft, null);
+  g.setConnected('y', true);
+  assert.ok(g.view('x').peekMsLeft > 9000);
 });

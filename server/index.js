@@ -56,6 +56,15 @@ function checkTimers(room) {
   // End the sticking window on time (or as soon as any pending give is done).
   clearTimeout(closeTimers.get(room.code));
   closeTimers.delete(room.code);
+  // Peek countdown at the start: flip the cards down when it runs out.
+  if (g && g.phase === 'peek' && g.peekDeadline !== null && !g.awaiting.size) {
+    clearTimeout(clockTimers.get(room.code));
+    clockTimers.set(room.code, setTimeout(() => {
+      clockTimers.delete(room.code);
+      if (room.game === g && g.checkPeekTimeout()) { broadcast(room); checkAwayTurn(room); }
+    }, Math.max(0, g.peekDeadline - Date.now()) + 50).unref());
+    return;
+  }
   // Turn timer: skip the turn when it runs out.
   clearTimeout(clockTimers.get(room.code));
   clockTimers.delete(room.code);
@@ -172,6 +181,7 @@ io.on('connection', (socket) => {
     const room = currentRoom(socket);
     rooms.startGame(room.code, socket.data.playerId);
     broadcast(room);
+    checkAwayTurn(room);
   }));
 
   socket.on('set_hand_size', safe(socket, ({ size }) => {

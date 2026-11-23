@@ -3,7 +3,7 @@
 // Players are identified by a stable playerId the browser keeps in localStorage.
 
 const { Game, MAX_PLAYERS, MIN_PLAYERS, HAND_SIZES, MAX_PLAYERS_BY_HAND, TURN_TIMER_CHOICES, MODES } = require('./game');
-const QUICK_PLAY_TURN_SECONDS = 10;
+const QUICK_PLAY_TURN_SECONDS = 30;
 
 const rooms = new Map();
 // No I or O, to avoid confusion with 1 and 0.
@@ -182,6 +182,7 @@ function createRoomWithPlayers(players, { autoStart = false } = {}) {
       gp.connected = false;
       game.awaiting.add(gp.id);
     }
+    game.peekDeadline = null; // the peek countdown starts once everyone has arrived
   }
   return room.code;
 }
