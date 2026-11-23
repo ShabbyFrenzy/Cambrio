@@ -2,7 +2,7 @@
 // Room registry. A room is a lobby of players that can play rounds of Cambrio.
 // Players are identified by a stable playerId the browser keeps in localStorage.
 
-const { Game, MAX_PLAYERS, MIN_PLAYERS, HAND_SIZES, MAX_PLAYERS_BY_HAND, TURN_TIMER_CHOICES, MODES } = require('./game');
+const { Game, MAX_PLAYERS, MIN_PLAYERS, HAND_SIZES, MAX_PLAYERS_BY_HAND, TURN_TIMER_CHOICES, OPTIONS } = require('./game');
 const QUICK_PLAY_TURN_SECONDS = 30;
 
 const rooms = new Map();
@@ -41,7 +41,7 @@ function createRoom() {
     game: null,
     handSize: 4,
     turnSeconds: 0, // 0 = no turn timer
-    mode: 'normal', // easy / normal / hard (private rooms only)
+    options: { remember: false, notes: false, counter: false }, // extra help, private rooms only
     maxPlayers: MAX_PLAYERS, // host can lower this for private rooms
     round: 0,
     createdAt: Date.now(),
@@ -97,7 +97,7 @@ function startGame(code, byPlayerId) {
   const order = seated.slice(offset).concat(seated.slice(0, offset));
   const max = MAX_PLAYERS_BY_HAND[room.handSize];
   if (order.length > max) throw new RoomError(`With ${room.handSize} cards each, at most ${max} players can play. Switch to 4 cards.`);
-  room.game = new Game(order.map((p) => ({ id: p.playerId, name: p.name })), { handSize: room.handSize, turnMs: room.turnSeconds * 1000, mode: room.isPublic ? 'normal' : room.mode });
+  room.game = new Game(order.map((p) => ({ id: p.playerId, name: p.name })), { handSize: room.handSize, turnMs: room.turnSeconds * 1000, options: room.isPublic ? {} : room.options });
   room.round++;
   room.scored = false;
   room.lastActive = Date.now();
@@ -129,14 +129,14 @@ function setTurnTimer(code, byPlayerId, value) {
   room.turnSeconds = n;
 }
 
-function setMode(code, byPlayerId, value) {
+function setOption(code, byPlayerId, key, value) {
   const room = getRoom(code);
   if (!room) throw new RoomError('Room not found');
   if (room.hostId !== byPlayerId) throw new RoomError('Only the host can change this');
-  if (room.isPublic) throw new RoomError('Quick play games use normal mode');
+  if (room.isPublic) throw new RoomError('Quick play games have no extra options');
   if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
-  if (!MODES.includes(value)) throw new RoomError('Pick easy, normal or hard');
-  room.mode = value;
+  if (!OPTIONS.includes(key)) throw new RoomError('Unknown option');
+  room.options = { ...room.options, [key]: !!value };
 }
 
 function setMaxPlayers(code, byPlayerId, value) {
@@ -197,7 +197,7 @@ function view(room, playerId) {
     maxPlayers: room.maxPlayers,
     maxPlayersCap: MAX_PLAYERS_BY_HAND[room.handSize],
     turnSeconds: room.turnSeconds,
-    mode: room.mode,
+    options: room.options,
     turnChoices: TURN_TIMER_CHOICES,
     isPublic: !!room.isPublic,
     players: room.players.map((p) => ({
@@ -220,6 +220,6 @@ function sweep(maxIdleMs = 30 * 60 * 1000) {
 }
 
 module.exports = {
-  rooms, RoomError, createRoom, getRoom, joinRoom, leaveRoom, startGame, setHandSize, setMaxPlayers, setTurnTimer, setMode,
+  rooms, RoomError, createRoom, getRoom, joinRoom, leaveRoom, startGame, setHandSize, setMaxPlayers, setTurnTimer, setOption,
   createRoomWithPlayers, recordResults, view, sweep, normalizeCode, cleanName,
 };

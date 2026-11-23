@@ -389,7 +389,8 @@ test('autoGive hands over a random card when the sticker stalls', () => {
 
 function modeGame(mode, extra, hands) {
   hands = hands || [[C('A'), C('2'), C('3'), C('4')], [C('5'), C('6'), C('7'), C('8')]];
-  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { deck: rigged(hands, extra), mode });
+  const options = { easy: { remember: true }, hard: { notes: true, counter: true }, normal: {} }[mode];
+  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { deck: rigged(hands, extra), options });
   g.act('a', { type: 'ready' }); g.act('b', { type: 'ready' });
   return g;
 }
@@ -412,7 +413,7 @@ test('easy mode: cards you have seen stay face up for you, even after they move'
 test('normal mode hides seen cards and hard mode keeps notes on cards', () => {
   const n = modeGame('normal', [C('9', 'H')]);
   assert.ok(n.view('a').players[0].slots.every((c) => c.hidden));
-  assert.throws(() => n.act('a', { type: 'note', target: { pid: 'b', slot: 0 }, note: { is: ['5'] } }), /hard mode/);
+  assert.throws(() => n.act('a', { type: 'note', target: { pid: 'b', slot: 0 }, note: { is: ['5'] } }), /turned off/);
   assert.strictEqual(n.view('a').unplayed, null);
 
   const g = modeGame('hard', [C('9', 'H'), C('J', 'H')]);
@@ -434,16 +435,17 @@ test('normal mode hides seen cards and hard mode keeps notes on cards', () => {
   assert.strictEqual(left.A, 1);
 });
 
-test('rooms: mode is host-only, private only, and passed to the game', () => {
+test('rooms: options are host-only and passed to the game', () => {
   const rooms = require('../server/rooms');
   const room = rooms.createRoom();
   rooms.joinRoom(room.code, { playerId: 'h', name: 'Host' });
   rooms.joinRoom(room.code, { playerId: 'g', name: 'Guest' });
-  assert.throws(() => rooms.setMode(room.code, 'g', 'easy'), /host/);
-  assert.throws(() => rooms.setMode(room.code, 'h', 'silly'));
-  rooms.setMode(room.code, 'h', 'hard');
-  assert.strictEqual(rooms.view(room).mode, 'hard');
-  assert.strictEqual(rooms.startGame(room.code).mode, 'hard');
+  assert.throws(() => rooms.setOption(room.code, 'g', 'notes', true), /host/);
+  assert.throws(() => rooms.setOption(room.code, 'h', 'silly', true));
+  rooms.setOption(room.code, 'h', 'notes', true);
+  rooms.setOption(room.code, 'h', 'remember', true);
+  assert.deepStrictEqual(rooms.view(room).options, { remember: true, notes: true, counter: false });
+  assert.deepStrictEqual(rooms.startGame(room.code).options, { remember: true, notes: true, counter: false });
 });
 
 test('peek countdown: cards flip down for everyone when it runs out', () => {
@@ -499,4 +501,15 @@ test('log says which cards moved, and swaps and looks send flash events', () => 
   assert.match(g.log.at(-1).text, /Bob swapped their own card #1 with Ann's card #2/);
   g.act('a', { type: 'draw_deck' }); g.act('a', { type: 'swap', slot: 3 });
   assert.match(g.log.at(-1).text, /into their card #4 and discarded the 4/);
+});
+
+test('notes: editing one card replaces its note exactly', () => {
+  const g = modeGame('hard', [C('9', 'H')]);
+  const t = { pid: 'b', slot: 0 };
+  g.act('a', { type: 'note', targets: [t], add: { is: ['5'], not: ['7'], knows: ['b'] } });
+  g.act('a', { type: 'note', targets: [t], add: { not: ['7'] }, replace: true });
+  assert.deepStrictEqual(g.view('a').players[1].slots[0].note, { is: [], not: ['7'], knows: [] });
+  g.act('a', { type: 'note', targets: [t], add: {}, replace: true });
+  assert.strictEqual(g.view('a').players[1].slots[0].note, undefined);
+  assert.throws(() => g.act('a', { type: 'note', targets: [t, { pid: 'a', slot: 0 }], add: {}, replace: true }), /one card/);
 });

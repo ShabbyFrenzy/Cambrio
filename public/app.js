@@ -428,13 +428,13 @@
               ? `<select id="turnTimer" data-do="turntimer">${room.turnChoices.map((n) => `<option value="${n}" ${n === room.turnSeconds ? 'selected' : ''}>${n ? `${n} seconds` : 'Off'}</option>`).join('')}</select>`
               : `<b>${room.turnSeconds ? `${room.turnSeconds} seconds` : 'Off'}</b>`}
           </div>
-          ${room.isPublic ? '' : `<div class="option-row">
-            <span class="muted">Mode</span>
-            ${isHost
-              ? MODES.map(([m, label]) => `<button class="${room.mode === m ? 'primary' : 'secondary'} small" data-do="mode" data-mode="${m}" aria-pressed="${room.mode === m}">${label}</button>`).join('')
-              : `<b>${MODES.find(([m]) => m === room.mode)[1]}</b>`}
-          </div>
-          <p class="center muted small-note">${MODE_NOTES[room.mode]}</p>`}
+          ${room.isPublic ? '' : `<div class="game-options">
+            <span class="muted">Extra help</span>
+            ${GAME_OPTIONS.map(([k, label, note]) => `<label class="toggle">
+              <input type="checkbox" data-do="option" data-key="${k}" ${room.options && room.options[k] ? 'checked' : ''} ${isHost ? '' : 'disabled'}>
+              <span><b>${label}</b><small>${note}</small></span>
+            </label>`).join('')}
+          </div>`}
           <p class="center muted small-note">${room.turnSeconds
             ? `Each turn has ${room.turnSeconds} seconds. After the last turn there are ${room.turnSeconds} seconds to stick.`
             : 'No turn timer. After the last turn, the round ends when everyone presses "No more sticks".'}</p>
@@ -458,20 +458,20 @@
     if (maxSel) maxSel.onchange = () => call('set_max_players', { value: Number(maxSel.value) });
     const timerSel = app.querySelector('[data-do="turntimer"]');
     if (timerSel) timerSel.onchange = () => call('set_turn_timer', { value: Number(timerSel.value) });
-    app.querySelectorAll('[data-do="mode"]').forEach((b) => {
-      b.onclick = () => call('set_mode', { value: b.dataset.mode });
+    app.querySelectorAll('[data-do="option"]').forEach((b) => {
+      b.onchange = () => call('set_option', { key: b.dataset.key, value: b.checked });
     });
     app.querySelectorAll('[data-do="handsize"]').forEach((b) => {
       b.onclick = () => call('set_hand_size', { size: Number(b.dataset.size) });
     });
   }
 
-  const MODES = [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']];
-  const MODE_NOTES = {
-    easy: 'Easy: once you have seen a card, it stays face up for you.',
-    normal: 'Normal: remember your cards yourself.',
-    hard: 'Hard: no help remembering, but you can mark cards with notes and check which cards are left.',
-  };
+  const GAME_OPTIONS = [
+    ['remember', 'Photographic memory', 'Cards you have seen stay face up for you.'],
+    ['notes', 'Card notes', "Mark what a card is or isn't, and who knows it."],
+    ['counter', 'Card counter', "See how many of each card haven't been discarded."],
+  ];
+  const opt = (g, k) => !!(g.options && g.options[k]);
 
   async function copy(text, msg) {
     try { await navigator.clipboard.writeText(text); toast(msg); }
@@ -546,7 +546,7 @@
         ${btn('power', a.power.label, a.power.enabled)}
         ${btn('skip', a.skip.label, a.skip.enabled)}
         ${btn('give', 'Give', a.give, a.give ? 'primary' : 'secondary')}
-        ${btn('stick', 'Stick', a.stick, 'primary wide')}
+        ${opt(g, 'notes') ? `${btn('stick', 'Stick', a.stick, 'primary')}${btn('note', '✎ Note', true, 'secondary note-btn')}` : btn('stick', 'Stick', a.stick, 'primary wide')}
         ${g.stage === 'closing' && g.closingMsLeft === null
           ? btn('done', (g.doneSticking || []).includes(me) ? 'Waiting for others…' : 'No more sticks', a.done, 'primary wide')
           : btn('cambio', sure ? 'Sure? Tap again' : 'Call Cambrio', a.cambio, `danger wide ${sure ? 'pulse' : ''}`)}
@@ -695,7 +695,7 @@
     S.selected = S.selected.filter((t) => cardAtView(g, t));
     if (g.phase !== 'play') { S.selected = []; S.noteMode = false; S.noteSel = []; }
     S.noteSel = S.noteSel.filter((t) => cardAtView(g, t));
-    if (!needsTwo(g, me) && S.selected.length > 1) S.selected = S.selected.slice(-1);
+    if (!needsTwo(g, me) && !opt(g, 'notes') && S.selected.length > 1) S.selected = S.selected.slice(-1);
     if (g.turnMsLeft !== null && g.turnMsLeft !== undefined) {
       S.turnFrozen = g.paused ? g.turnMsLeft : null;
       const deadline = Date.now() + g.turnMsLeft;
@@ -745,6 +745,7 @@
       <section class="table">
         <div class="play-area">
           <div class="opponents">${opponents.map((p) => seatHtml(g, p, me, false)).join('')}</div>
+          <div class="mid">
           <div class="center-row">
             <div class="pile">${g.deckCount ? cardHtml({ hidden: true }, { clickable: canDraw, key: 'deck', data: { do: 'draw' } }) : cardHtml(null, { key: 'deck' })}<span>Deck · ${g.deckCount}</span></div>
             ${drawnHtml}
@@ -754,6 +755,7 @@
           ${resultsHtml(g, room)}
           ${g.phase !== 'ended' ? `<div class="prompt">${promptHtml(g, me)}</div>` : ''}
           ${noteBarHtml(g)}
+          </div>
           <div class="mine">${mine ? seatHtml(g, mine, me, true) : '<p class="center muted">You are watching this game. You can play from the next round.</p>'}</div>
         </div>
         <aside class="side">
@@ -768,10 +770,11 @@
     if (g.phase === 'ended') S.endShownRound = room.round;
   }
 
-  // Hard mode notes: 1) pick what to note, 2) tap every card it applies to, 3) Apply.
+  // Card notes: select cards (tap, or drag across several), press Note, pick the info, Apply.
+  // With one card picked you edit that card's note; with several, the info is added to each.
+  // It floats over the middle of the table so nothing else moves.
   function noteBarHtml(g) {
-    if (g.mode !== 'hard' || g.phase !== 'play' || !g.players.some((p) => p.id === S.room.you)) return '';
-    if (!S.noteMode) return '<div class="note-bar"><button class="secondary small" data-do="notemode">✎ Make a note</button></div>';
+    if (!S.noteMode || !opt(g, 'notes') || g.phase !== 'play') return '';
     const info = S.noteInfo;
     const left = g.unplayed || {};
     // A rank whose cards are all discarded can't be any card in play, so it isn't offered.
@@ -784,26 +787,34 @@
       return `<button class="chip who ${on ? 'on' : ''}" data-do="noteknows" data-id="${esc(p.id)}" aria-pressed="${on}">${esc(p.id === S.room.you ? 'You' : p.name)}</button>`;
     }).join('');
     const n = S.noteSel.length;
+    const one = n === 1 ? S.noteSel[0] : null;
+    const title = one
+      ? `Note on ${one.pid === S.room.you ? 'your' : `${nameIn(g, one.pid)}'s`} card #${one.slot + 1}`
+      : n ? `Add to the notes on ${n} cards` : 'Tap the cards this note is for';
     const hasInfo = info.is.length || info.not.length || info.knows.length;
-    return `<div class="note-bar open">
-      <span class="muted"><b>1.</b> Pick what to note. Tap a rank once for <b class="is">is</b>, twice for <b class="not">isn't</b>.</span>
+    return `<div class="note-maker" role="dialog" aria-label="Card note">
+      <b class="note-title">${title}</b>
+      <span class="muted">Tap a rank once for <b class="is">is</b>, twice for <b class="not">isn't</b>.</span>
       <div class="chips">${chips}</div>
       <span class="muted">Who knows it:</span>
       <div class="chips">${people}</div>
-      <span class="muted"><b>2.</b> Tap the cards it applies to · <b>${n}</b> picked</span>
       <div class="chips">
-        <button class="primary small" data-do="noteapply" ${hasInfo && n ? '' : 'disabled'}>Apply</button>
-        <button class="secondary small" data-do="noteclear" ${n ? '' : 'disabled'}>Clear notes on these</button>
-        <button class="ghost small" data-do="notedone">Done</button>
+        <button class="primary small" data-do="noteapply" ${n && (hasInfo || one) ? '' : 'disabled'}>Apply</button>
+        <button class="secondary small" data-do="noteclear" ${n ? '' : 'disabled'}>Clear note${n === 1 ? '' : 's'}</button>
+        <button class="ghost small" data-do="notedone">Cancel</button>
       </div>
     </div>`;
+  }
+
+  function closeNotes() {
+    S.noteMode = false; S.noteSel = []; S.noteInfo = { is: [], not: [], knows: [] };
   }
 
   // Hard mode: how many of each card have not been discarded yet.
   const LEFT_ORDER = [['JOKER', 'Joker', 2], ['A', 'A', 4], ['2', '2', 4], ['3', '3', 4], ['4', '4', 4], ['5', '5', 4], ['6', '6', 4],
     ['7', '7', 4], ['8', '8', 4], ['9', '9', 4], ['10', '10', 4], ['J', 'J', 4], ['Q', 'Q', 4], ['K-red', 'K ♥♦', 2], ['K-black', 'K ♠♣', 2]];
   function cardsLeftHtml(g) {
-    if (g.mode !== 'hard' || !g.unplayed) return '';
+    if (!opt(g, 'counter') || !g.unplayed) return '';
     const open = !!S.showLeft;
     const rows = LEFT_ORDER.map(([k, label, total]) => {
       const n = g.unplayed[k] || 0;
@@ -855,6 +866,7 @@
   app.addEventListener('click', (e) => {
     const el = e.target.closest('[data-do], [data-pid]');
     if (!el || !S.room) return;
+    if (S.suppressClick && S.suppressClick > Date.now() && el.dataset.pid !== undefined) { S.suppressClick = 0; return; }
     const g = S.room.game;
     const d = el.dataset.do;
     if (el.disabled) return;
@@ -879,8 +891,17 @@
     if (d === 'skip') { S.selected = []; return act('skip_power'); }
     if (d === 'done') return act('done_sticking');
     if (d === 'cardsleft') { S.showLeft = !S.showLeft; return render(); }
-    if (d === 'notemode') { S.noteMode = true; S.selected = []; return render(); }
-    if (d === 'notedone') { S.noteMode = false; S.noteSel = []; S.noteInfo = { is: [], not: [], knows: [] }; return render(); }
+    if (d === 'note') {
+      if (S.noteMode) { closeNotes(); return render(); }
+      S.noteMode = true;
+      S.noteSel = S.selected.slice();
+      S.selected = [];
+      const one = S.noteSel.length === 1 && cardAtView(g, S.noteSel[0]);
+      const n = one && one.note;
+      S.noteInfo = n ? { is: [...n.is], not: [...n.not], knows: [...(n.knows || [])] } : { is: [], not: [], knows: [] };
+      return render();
+    }
+    if (d === 'notedone') { closeNotes(); return render(); }
     if (d === 'noterank') {
       const info = S.noteInfo; const r = el.dataset.rank;
       if (info.is.includes(r)) { info.is = info.is.filter((x) => x !== r); info.not.push(r); }
@@ -895,9 +916,9 @@
     }
     if (d === 'noteapply' || d === 'noteclear') {
       const targets = S.noteSel.slice();
-      const msg = d === 'noteapply' ? { targets, add: S.noteInfo } : { targets, clear: true };
-      S.noteSel = [];
-      if (d === 'noteapply') S.noteInfo = { is: [], not: [], knows: [] };
+      const msg = d === 'noteclear' ? { targets, clear: true }
+        : { targets, add: S.noteInfo, replace: targets.length === 1 };
+      closeNotes();
       act('note', msg);
       return render();
     }
@@ -927,6 +948,41 @@
       render();
     }
   });
+  // Hold and drag across cards to select several at once (for notes, or the
+  // two cards of a J, Q or black K power). A plain tap still selects one card.
+  let drag = null;
+  const cardKeyOf = (el) => el && el.closest && el.closest('.card.clickable[data-pid]');
+  app.addEventListener('pointerdown', (e) => {
+    const el = cardKeyOf(e.target);
+    if (!el || !S.room || !S.room.game || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    drag = { start: el.dataset.key, keys: [el.dataset.key], moved: false };
+  });
+  app.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const el = cardKeyOf(document.elementFromPoint(e.clientX, e.clientY));
+    if (!el || drag.keys.includes(el.dataset.key)) return;
+    drag.moved = true;
+    drag.keys.push(el.dataset.key);
+    for (const k of drag.keys) { const c = app.querySelector(`[data-key="${k}"]`); if (c) c.classList.add(S.noteMode ? 'note-pick' : 'selected'); }
+  });
+  const endDrag = () => {
+    const d = drag; drag = null;
+    if (!d || !d.moved || !S.room || !S.room.game) return;
+    const g = S.room.game;
+    const picked = d.keys.map((k) => { const [, pid, slot] = k.split(':'); return { pid, slot: Number(slot) }; })
+      .filter((t) => cardAtView(g, t));
+    if (S.noteMode) {
+      for (const t of picked) if (!S.noteSel.some((x) => x.pid === t.pid && x.slot === t.slot)) S.noteSel.push(t);
+    } else {
+      const max = opt(g, 'notes') ? Infinity : needsTwo(g, S.room.you) ? 2 : 1;
+      S.selected = picked.slice(-max);
+    }
+    S.suppressClick = Date.now() + 400; // the click that ends a drag shouldn't toggle a card
+    render();
+  };
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', () => { drag = null; });
+
   app.addEventListener('keydown', (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.card.clickable')) { e.preventDefault(); e.target.click(); }
   });
