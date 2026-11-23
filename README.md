@@ -23,6 +23,7 @@ Open two browser windows (or one normal and one private window) to play against 
 | `server/rooms.js` | Room codes, joining, hosts, starting rounds, running totals. |
 | `server/index.js` | Express + Socket.IO wiring, reconnects, away-player timeouts. |
 | `server/matchmaking.js` | Quick play queue (random players). |
+| `server/bots.js` | Computer players for private rooms (only use cards they have seen). |
 | `public/index.html`, `app.js`, `style.css` | Home, lobby and game table. |
 | `public/quickplay.html` | Quick play waiting page. |
 
@@ -48,11 +49,18 @@ Open two browser windows (or one normal and one private window) to play against 
   - The whole table pauses until that card is given (a random card is given after 20 seconds).
   - To stick: select a card, then press Stick in the action panel.
 - Turn timer: the host can set one (off, 10, 15, 20, 30 or 60 seconds). Quick play always uses 30 seconds. The timer restarts after every action you take on your turn (drawing, discarding, looking).
-- Extra help (private rooms only, each one on or off; quick play has none):
+- Game options (private rooms only, each one on or off; quick play has none):
   - Photographic memory: once you have seen a card, it stays face up for you wherever it moves.
   - Card notes: select cards (tap one, or hold and drag across several), press Note (or long-press a card), pick the ranks it isn't (one tap) or is (two taps) and who knows it, then Apply. With one card you edit that card's note. Only you see your notes, and they follow the card.
   - Card counter: a Cards left button under the log shows how many of each card have not been discarded yet.
   - Score tracker: a line under your hand adds up the cards you can see or have noted as one rank.
+  - Emoji reactions: a 😀 button in the corner sends an emoji that floats up from your seat.
+  - Stick reaction time: each correct stick shows how long after the card hit the pile it came.
+  - Round replay: after the round, step through every move with all cards face up.
+  - Bots: the host can add computer players in the lobby.
+- Play to a target (private rooms): off, 50 or 100 points. Once anyone reaches it, the lowest total wins the match; the next game starts a new match.
+- Rejoin: the main screen offers to rejoin the last room you were in (you keep your seat and cards).
+- Looks: 4 card backs and 4 table colours on the main screen, saved per device.
 - After the final turn, the sticking window lasts as long as the turn timer, or ends sooner once everyone presses "No more sticks". With no timer, it ends when everyone has pressed it.
 - The Cambrio caller wins ties. Any other tie goes to the player with the lowest single card (a player with no cards left counts as lowest). If that also ties, they share the win.
 

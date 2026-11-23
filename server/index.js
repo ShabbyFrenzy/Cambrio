@@ -5,10 +5,12 @@ const express = require('express');
 const { Server } = require('socket.io');
 const rooms = require('./rooms');
 const { GameError, GIVE_TIMEOUT_MS } = require('./game');
+const bots = require('./bots');
 
 const PORT = process.env.PORT || 3000;
 const TURN_TIMEOUT_MS = 45 * 1000; // skip an away player's turn after this long
 const MATCH_JOIN_TIMEOUT_MS = 30 * 1000; // matchmade rooms stop waiting after this long
+const REACTIONS = ['😂', '😮', '😡', '👏', '😭', '🔥'];
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +30,43 @@ function broadcast(room) {
     const s = io.sockets.sockets.get(sid);
     if (s && s.data.playerId) s.emit('state', rooms.view(room, s.data.playerId));
   }
+  scheduleBots(room);
+}
+
+// Bots act a moment after each change, one move at a time, so people can follow along.
+const botTimers = new Map(); // code -> timeout
+function scheduleBots(room) {
+  clearTimeout(botTimers.get(room.code));
+  botTimers.delete(room.code);
+  const g = room.game;
+  if (!g || g.phase === 'ended') return;
+  const botIds = room.players.filter((p) => p.bot).map((p) => p.playerId);
+  if (!botIds.length) return;
+  const next = () => {
+    for (const id of botIds) {
+      const a = bots.decide(g, id);
+      if (a) return { id, a };
+    }
+    return null;
+  };
+  if (!next()) return;
+  const wait = g.phase === 'peek' ? 600 : 900 + Math.floor(Math.random() * 700);
+  botTimers.set(room.code, setTimeout(() => {
+    botTimers.delete(room.code);
+    if (room.game !== g || !rooms.getRoom(room.code)) return;
+    const move = next(); // things may have changed while waiting
+    if (!move) return;
+    try {
+      const { reveals } = g.act(move.id, move.a);
+      sendReveals(room, reveals);
+    } catch (err) {
+      // Never let a confused bot stall the table: fall back to the simplest legal move.
+      const fallback = { draw: 'draw_deck', hold: 'discard', power: 'skip_power', closing: 'done_sticking' }[g.stage];
+      try { if (fallback) g.act(move.id, { type: fallback }); else return; } catch (_) { return; }
+    }
+    broadcast(room);
+    checkAwayTurn(room);
+  }, wait).unref());
 }
 
 function sendReveals(room, reveals) {
@@ -200,6 +239,35 @@ io.on('connection', (socket) => {
     const room = currentRoom(socket);
     rooms.setOption(room.code, socket.data.playerId, key, value);
     broadcast(room);
+  }));
+
+  socket.on('set_target_score', safe(socket, ({ value }) => {
+    const room = currentRoom(socket);
+    rooms.setTargetScore(room.code, socket.data.playerId, value);
+    broadcast(room);
+  }));
+
+  socket.on('add_bot', safe(socket, () => {
+    const room = currentRoom(socket);
+    rooms.addBot(room.code, socket.data.playerId);
+    broadcast(room);
+  }));
+
+  socket.on('remove_bot', safe(socket, ({ id }) => {
+    const room = currentRoom(socket);
+    rooms.removeBot(room.code, socket.data.playerId, String(id || ''));
+    broadcast(room);
+  }));
+
+  // Emoji reactions (private rooms with the option on). A few per second at most.
+  socket.on('react', safe(socket, ({ emoji }) => {
+    const room = currentRoom(socket);
+    if (room.isPublic || !room.options.reactions) throw new rooms.RoomError('Reactions are off');
+    if (!REACTIONS.includes(emoji)) throw new rooms.RoomError('Unknown reaction');
+    const now = Date.now();
+    if (now - (socket.data.lastReact || 0) < 700) return {};
+    socket.data.lastReact = now;
+    io.to(room.code).emit('reaction', { pid: socket.data.playerId, emoji });
   }));
 
   socket.on('set_max_players', safe(socket, ({ value }) => {

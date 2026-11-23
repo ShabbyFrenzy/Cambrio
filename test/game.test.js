@@ -444,8 +444,9 @@ test('rooms: options are host-only and passed to the game', () => {
   assert.throws(() => rooms.setOption(room.code, 'h', 'silly', true));
   rooms.setOption(room.code, 'h', 'notes', true);
   rooms.setOption(room.code, 'h', 'remember', true);
-  assert.deepStrictEqual(rooms.view(room).options, { remember: true, notes: true, counter: false, tracker: false });
-  assert.deepStrictEqual(rooms.startGame(room.code).options, { remember: true, notes: true, counter: false, tracker: false });
+  const want = { remember: true, notes: true, counter: false, tracker: false, reactions: false, stickTime: false, replay: false, bots: false };
+  assert.deepStrictEqual(rooms.view(room).options, want);
+  assert.deepStrictEqual(rooms.startGame(room.code).options, want);
 });
 
 test('peek countdown: cards flip down for everyone when it runs out', () => {
@@ -533,4 +534,49 @@ test('notes are kept in order from lowest to highest value', () => {
   const g = modeGame('hard', [C('9', 'H')]);
   g.act('a', { type: 'note', targets: [{ pid: 'b', slot: 0 }], add: { not: ['K-black', '7', 'JOKER', 'A', 'K-red'] } });
   assert.deepStrictEqual(g.view('a').players[1].slots[0].note.not, ['K-red', 'JOKER', 'A', '7', 'K-black']);
+});
+
+test('bots: three bots can play a whole round on their own', () => {
+  const { decide } = require('../server/bots');
+  for (let seed = 1; seed <= 20; seed++) {
+    let r = seed;
+    const rng = () => ((r = (r * 16807) % 2147483647) / 2147483647);
+    const g = new Game([{ id: 'a', name: 'Bot 1' }, { id: 'b', name: 'Bot 2' }, { id: 'c', name: 'Bot 3' }], { rng, options: { replay: true, stickTime: true } });
+    let steps = 0;
+    while (g.phase !== 'ended' && steps < 3000) {
+      const move = ['a', 'b', 'c'].map((id) => ({ id, a: decide(g, id) })).find((m) => m.a);
+      assert.ok(move, `seed ${seed}: no bot could move (stage ${g.stage})`);
+      g.act(move.id, move.a);
+      steps++;
+    }
+    if (g.phase !== 'ended') { g.act(g.current().id, { type: 'call_cambio' }); continue; }
+    assert.ok(g.results.winners.length >= 1);
+    assert.ok(g.view('a').replay.length > 3);
+  }
+});
+
+test('rooms: bots, target score and match over', () => {
+  const rooms = require('../server/rooms');
+  const room = rooms.createRoom();
+  rooms.joinRoom(room.code, { playerId: 'h', name: 'Host' });
+  assert.throws(() => rooms.addBot(room.code, 'h'), /Bots option/);
+  rooms.setOption(room.code, 'h', 'bots', true);
+  const bot = rooms.addBot(room.code, 'h');
+  assert.strictEqual(bot.name, 'Bot 1');
+  rooms.setTargetScore(room.code, 'h', 50);
+  assert.throws(() => rooms.setTargetScore(room.code, 'h', 7));
+  room.players[0].totalScore = 20; room.players[1].totalScore = 49;
+  rooms.startGame(room.code, 'h');
+  room.game.finish();
+  room.game.results.scores.forEach((s) => { s.score = s.id === 'h' ? 5 : 3; });
+  rooms.recordResults(room);
+  assert.deepStrictEqual(rooms.view(room, 'h').matchOver, { winners: ['h'] });
+  rooms.startGame(room.code, 'h');
+  assert.strictEqual(room.players[0].totalScore, 0);
+  assert.strictEqual(rooms.view(room, 'h').matchOver, null);
+  room.game.finish();
+  rooms.setOption(room.code, 'h', 'bots', false);
+  assert.strictEqual(room.players.length, 1);
+  rooms.leaveRoom(room.code, 'h');
+  assert.strictEqual(rooms.getRoom(room.code), null);
 });

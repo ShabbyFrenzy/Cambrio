@@ -38,8 +38,12 @@ const MAX_PLAYERS = 8;
 //   notes:    you can mark cards with what they are/aren't and who knows them.
 //   counter:  shows how many of each card have not been discarded yet.
 //   tracker:  adds up the cards in your hand that you can see or have noted (shown by the client).
+//   reactions: emoji reactions (handled by the server sockets).
+//   stickTime: shows how fast a right stick was.
+//   replay:   keeps a step-by-step history of the round to watch at the end.
+//   bots:     the host can add computer players (handled by rooms and server/bots.js).
 // hard: you can write notes on cards and see which cards have not been discarded yet.
-const OPTIONS = ['remember', 'notes', 'counter', 'tracker'];
+const OPTIONS = ['remember', 'notes', 'counter', 'tracker', 'reactions', 'stickTime', 'replay', 'bots'];
 // Lowest to highest value: red K (-1), Joker (0), A ... Q, black K (13).
 const NOTE_RANKS = ['K-red', 'JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-black'];
 
@@ -119,6 +123,8 @@ class Game {
     this.pauseStart = null; // set while everyone waits for a sticker to give a card
     this.doneSticking = new Set(); // no-timer games: who pressed "No more sticks"
     this.peekDeadline = this.now() + PEEK_MS; // null while a quick play game waits for players to arrive
+    this.topSince = this.now(); // when the top discard last changed (for stick times)
+    this.history = []; // replay snapshots, kept when the replay option is on
     this.options = Object.fromEntries(OPTIONS.map((k) => [k, !!(opts.options && opts.options[k])]));
     this.known = new Map(); // playerId -> Set of card objects that player has seen (easy mode)
     this.notes = new Map(); // playerId -> Map card object -> {is:[], not:[]} (hard mode)
@@ -174,9 +180,22 @@ class Game {
     for (const m of this.notes.values()) for (const c of cards) m.delete(c);
   }
 
+  // Replay: a face-up picture of the table after each logged event.
+  snapshot(text) {
+    if (!this.options || !this.options.replay || !this.players) return;
+    const plain = (c) => (c ? { rank: c.rank, suit: c.suit } : null);
+    this.history.push({
+      text,
+      hands: this.players.map((p) => ({ id: p.id, cards: p.hand.map(plain) })),
+      top: plain(this.discard[this.discard.length - 1]),
+      drawn: plain(this.drawn),
+    });
+  }
+
   addLog(text) {
     this.log.push({ n: this.log.length, text });
     if (this.log.length > 200) this.log.shift();
+    this.snapshot(text);
   }
 
   player(id) {
@@ -215,6 +234,7 @@ class Game {
 
   discardCard(card) {
     this.discard.push(card);
+    this.topSince = this.now();
   }
 
   // Animation events. Places: {zone:'deck'|'drawn'|'discard'} or {pid, slot}.
@@ -436,10 +456,11 @@ class Game {
     if (!top) throw new GameError('There is nothing to stick on');
     const whose = owner.id === pid ? 'their' : `${owner.name}'s`;
     if (card.rank === top.rank) {
+      const ms = this.options.stickTime ? Math.max(0, this.now() - this.topSince) : null;
       owner.hand[t.slot] = null;
       this.discardCard(card);
-      this.fx.push({ kind: 'stick', by: pid, at: { pid: t.pid, slot: t.slot }, card, ok: true });
-      this.addLog(`${p.name} stuck ${whose} card #${t.slot + 1} (${cardLabel(card)}) on the pile!`);
+      this.fx.push({ kind: 'stick', by: pid, at: { pid: t.pid, slot: t.slot }, card, ok: true, ms });
+      this.addLog(`${p.name} stuck ${whose} card #${t.slot + 1} (${cardLabel(card)}) on the pile!${ms !== null ? ` (${(ms / 1000).toFixed(2)}s)` : ''}`);
       if (owner.id !== pid && p.hand.some(Boolean)) {
         this.pendingGive[pid] = { to: owner.id, slot: t.slot };
         if (this.pauseStart === null) this.pauseStart = this.now();
@@ -810,6 +831,7 @@ class Game {
       paused: this.pauseStart !== null,
       doneSticking: [...this.doneSticking],
       results: this.results,
+      replay: ended && this.options.replay ? this.history : null,
       log: this.log.slice(-40),
       youAreIn: !!me,
     };

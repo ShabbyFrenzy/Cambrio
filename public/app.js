@@ -98,6 +98,7 @@
   }
   function enterRoom(code) {
     S.code = code;
+    store.set('cambrioLastRoom', code);
     const url = new URL(location.href);
     url.searchParams.set('room', code);
     history.replaceState(null, '', url);
@@ -105,6 +106,7 @@
   async function leaveRoom() {
     await call('leave_room', {});
     S.code = null; S.room = null;
+    store.set('cambrioLastRoom', '');
     history.replaceState(null, '', '/');
     renderHome();
   }
@@ -145,6 +147,20 @@
     for (const c of cards) S.reveals.set(`${c.pid}:${c.slot}`, { card: c.card, until, shown: false });
     render();
     setTimeout(render, 5100);
+  });
+  socket.on('reaction', ({ pid, emoji }) => {
+    if (REDUCED_MOTION) return;
+    const seat = document.querySelector(`[data-seat="${CSS.escape(pid)}"] .seat-head`);
+    if (!seat) return;
+    const r = seat.getBoundingClientRect();
+    const el = document.createElement('div');
+    el.className = 'reaction-float';
+    el.textContent = emoji;
+    el.style.left = `${r.left + Math.min(r.width, 160) / 2}px`;
+    el.style.top = `${r.top}px`;
+    document.body.appendChild(el);
+    el.animate([{ transform: 'translate(-50%,0) scale(.6)', opacity: 0 }, { transform: 'translate(-50%,-20px) scale(1.2)', opacity: 1, offset: 0.2 }, { transform: 'translate(-50%,-90px) scale(1)', opacity: 0 }],
+      { duration: 1800, easing: 'ease-out', fill: 'forwards' }).finished.then(() => el.remove());
   });
   socket.on('matched', ({ code }) => { location.href = `/?room=${encodeURIComponent(code)}`; });
   socket.on('connect', () => {
@@ -204,6 +220,73 @@
     wrap.innerHTML = cardHtml(card || { hidden: true });
   }
 
+  function stickTimeBadge(ms, rect) {
+    const el = document.createElement('div');
+    el.className = 'stick-time';
+    el.textContent = `⚡ ${(ms / 1000).toFixed(2)}s`;
+    el.style.left = `${rect.left + rect.width / 2}px`;
+    el.style.top = `${rect.top - 8}px`;
+    document.body.appendChild(el);
+    el.animate([{ opacity: 0, transform: 'translate(-50%,0)' }, { opacity: 1, transform: 'translate(-50%,-18px)', offset: 0.15 }, { opacity: 1, transform: 'translate(-50%,-24px)', offset: 0.8 }, { opacity: 0, transform: 'translate(-50%,-34px)' }],
+      { duration: 2200, fill: 'forwards' }).finished.then(() => el.remove());
+  }
+
+  // ---------- round replay ----------
+  // Steps through snapshots of the table (every card face up) taken after each log line.
+  function openReplay(steps, players) {
+    let dlg = document.getElementById('replayDialog');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'replayDialog';
+      dlg.className = 'replay';
+      document.body.appendChild(dlg);
+    }
+    let i = 0;
+    let timer = null;
+    const nameOf = (id) => { const p = players.find((x) => x.id === id); return p ? esc(p.name) : '?'; };
+    const stop = () => { clearInterval(timer); timer = null; };
+    const draw = () => {
+      const st = steps[i];
+      dlg.innerHTML = `
+        <div class="replay-head"><h2>Round replay</h2><button class="ghost small" data-r="close" aria-label="Close replay">✕</button></div>
+        <p class="replay-step"><span class="muted">Step ${i + 1} of ${steps.length}</span><br>${esc(st.text)}</p>
+        <div class="replay-table">
+          ${st.hands.map((h) => `<div class="replay-seat"><b>${nameOf(h.id)}</b><div class="replay-hand ${h.cards.length > 4 ? 'wide' : ''}">${h.cards.map((c) => (c ? cardHtml(c) : cardHtml(null))).join('')}</div></div>`).join('')}
+          <div class="replay-seat"><b>Discard</b><div class="replay-pile">${st.top ? cardHtml(st.top) : cardHtml(null, { ghost: true })}</div></div>
+          ${st.drawn ? `<div class="replay-seat"><b>Drawn</b><div class="replay-pile">${cardHtml(st.drawn)}</div></div>` : ''}
+        </div>
+        <input type="range" min="0" max="${steps.length - 1}" value="${i}" data-r="seek" aria-label="Replay position">
+        <div class="replay-controls">
+          <button class="secondary small" data-r="first" aria-label="First step">⏮</button>
+          <button class="secondary small" data-r="prev" ${i === 0 ? 'disabled' : ''}>◀ Back</button>
+          <button class="primary small" data-r="play">${timer ? '❚❚ Pause' : '▶ Play'}</button>
+          <button class="secondary small" data-r="next" ${i === steps.length - 1 ? 'disabled' : ''}>Next ▶</button>
+          <button class="secondary small" data-r="last" aria-label="Last step">⏭</button>
+        </div>`;
+    };
+    const go = (n) => { i = Math.max(0, Math.min(steps.length - 1, n)); if (i === steps.length - 1) stop(); draw(); };
+    dlg.onclick = (e) => {
+      const b = e.target.closest('[data-r]');
+      if (!b) { if (e.target === dlg) { stop(); dlg.close(); } return; }
+      const r = b.dataset.r;
+      if (r === 'close') { stop(); dlg.close(); }
+      if (r === 'first') { stop(); go(0); }
+      if (r === 'last') { stop(); go(steps.length - 1); }
+      if (r === 'prev') { stop(); go(i - 1); }
+      if (r === 'next') { stop(); go(i + 1); }
+      if (r === 'play') {
+        if (timer) { stop(); draw(); return; }
+        if (i === steps.length - 1) i = 0;
+        timer = setInterval(() => go(i + 1), 1300);
+        draw();
+      }
+    };
+    dlg.oninput = (e) => { if (e.target.dataset.r === 'seek') { stop(); go(Number(e.target.value)); } };
+    dlg.onclose = stop;
+    draw();
+    dlg.showModal();
+  }
+
   async function stickFx(ev, fromRect, delay) {
     if (delay) await wait(delay);
     const atKey = placeKey(ev.at);
@@ -216,6 +299,7 @@
     el.classList.add(ev.ok ? 'stick-ok' : 'stick-bad');
     await el.animate([{ transform: `${lift} scaleX(0)` }, { transform: lift }], { duration: 120, fill: 'forwards' }).finished;
     await wait(420);
+    if (ev.ok && typeof ev.ms === 'number') stickTimeBadge(ev.ms, fromRect);
     if (ev.ok) {
       const to = rectOf('discard');
       if (to) {
@@ -376,6 +460,7 @@
   function renderHome(prefillCode = '') {
     document.getElementById('roomBadge').hidden = true;
     const name = store.get('cambioName') || '';
+    const lastRoom = store.get('cambrioLastRoom') || '';
     app.innerHTML = `
       <section class="home">
         <div class="hero">
@@ -401,7 +486,23 @@
           <div class="divider">or</div>
           <a class="secondary center" href="/quickplay.html" style="text-decoration:none;padding:10px 18px;border-radius:999px;font-weight:600;color:var(--ink);background:rgba(255,255,255,.14)">Quick play with random players</a>
         </form>
+        ${lastRoom ? `<div class="box rejoin"><span>You were in room <b>${esc(lastRoom)}</b>.</span><button class="primary small" type="button" data-do="rejoin">Rejoin</button></div>` : ''}
+        <div class="home-links">
+          <button class="secondary" type="button" data-do="tutorial">📖 How to play (tutorial)</button>
+        </div>
+        <div class="box customise">
+          <h3>Customise</h3>
+          <span class="muted">Card back</span>
+          <div class="swatches">${CARD_BACKS.map(([k, label]) => `<button type="button" class="swatch back-swatch ${look.back === k ? 'on' : ''}" data-do="setback" data-v="${k}" aria-pressed="${look.back === k}" title="${label}"><span class="card back" data-back="${k}"></span><small>${label}</small></button>`).join('')}</div>
+          <span class="muted">Table</span>
+          <div class="swatches">${TABLES.map(([k, label]) => `<button type="button" class="swatch table-swatch ${look.table === k ? 'on' : ''}" data-do="settable" data-v="${k}" aria-pressed="${look.table === k}" title="${label}"><span class="felt" data-table="${k}"></span><small>${label}</small></button>`).join('')}</div>
+        </div>
       </section>`;
+    app.querySelectorAll('[data-do="setback"]').forEach((b) => { b.onclick = () => { setLook('back', b.dataset.v); renderHome(codeInput.value); }; });
+    app.querySelectorAll('[data-do="settable"]').forEach((b) => { b.onclick = () => { setLook('table', b.dataset.v); renderHome(codeInput.value); }; });
+    app.querySelector('[data-do="tutorial"]').onclick = () => openTutorial();
+    const rejoinBtn = app.querySelector('[data-do="rejoin"]');
+    if (rejoinBtn) rejoinBtn.onclick = () => { const n = nameInput.value.trim() || store.get('cambioName') || 'Player'; joinRoom(lastRoom, n).then((res) => { if (!res) { store.set('cambrioLastRoom', ''); renderHome(); } }); };
     const nameInput = document.getElementById('nameInput');
     const codeInput = document.getElementById('codeInput');
     const getName = () => {
@@ -449,9 +550,13 @@
                 <span class="dot ${p.connected ? '' : 'off'}"></span>
                 <span>${esc(p.name)}${p.id === me ? ' (you)' : ''}</span>
                 ${p.id === room.hostId ? '<span class="tag">HOST</span>' : ''}
+                ${p.bot ? '<span class="tag bot-tag">BOT</span>' : ''}
+                ${p.bot && isHost ? `<button class="ghost tiny" data-do="removebot" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">✕</button>` : ''}
                 ${room.round > 0 ? `<span class="meta">${p.wins} win${p.wins === 1 ? '' : 's'} · ${p.totalScore} pts</span>` : ''}
               </li>`).join('')}
           </ul>
+          ${isHost && room.options && room.options.bots && !room.isPublic
+            ? `<button class="secondary small add-bot" data-do="addbot" ${room.players.length >= room.maxPlayers ? 'disabled' : ''}>+ Add a bot</button>` : ''}
           <div class="option-row">
             <span class="muted">Cards each</span>
             ${isHost
@@ -472,14 +577,20 @@
               ? `<select id="turnTimer" data-do="turntimer">${room.turnChoices.map((n) => `<option value="${n}" ${n === room.turnSeconds ? 'selected' : ''}>${n ? `${n} seconds` : 'Off'}</option>`).join('')}</select>`
               : `<b>${room.turnSeconds ? `${room.turnSeconds} seconds` : 'Off'}</b>`}
           </div>
+          ${room.isPublic ? '' : `<div class="option-row">
+            <label class="muted" for="targetScore">Play to</label>
+            ${isHost
+              ? `<select id="targetScore" data-do="target">${room.targetChoices.map((n) => `<option value="${n}" ${n === room.targetScore ? 'selected' : ''}>${n ? `${n} points` : 'No target (single rounds)'}</option>`).join('')}</select>`
+              : `<b>${room.targetScore ? `${room.targetScore} points` : 'No target'}</b>`}
+          </div>`}
           ${room.isPublic ? '' : `<div class="game-options">
-            <span class="muted">Extra help</span>
+            <span class="muted">Game options</span>
             ${GAME_OPTIONS.map(([k, label, note]) => `<label class="toggle">
               <input type="checkbox" data-do="option" data-key="${k}" ${room.options && room.options[k] ? 'checked' : ''} ${isHost ? '' : 'disabled'}>
               <span><b>${label}</b><small>${note}</small></span>
             </label>`).join('')}
           </div>`}
-          <p class="center muted small-note">${room.turnSeconds
+          <p class="center muted small-note">${room.targetScore && !room.isPublic ? `Rounds keep going until someone reaches ${room.targetScore} points. Then the lowest total wins the match. ` : ''}${room.turnSeconds
             ? `Each turn has ${room.turnSeconds} seconds. After the last turn there are ${room.turnSeconds} seconds to stick.`
             : 'No turn timer. After the last turn, the round ends when everyone presses "No more sticks".'}</p>
           ${isHost
@@ -502,6 +613,11 @@
     if (maxSel) maxSel.onchange = () => call('set_max_players', { value: Number(maxSel.value) });
     const timerSel = app.querySelector('[data-do="turntimer"]');
     if (timerSel) timerSel.onchange = () => call('set_turn_timer', { value: Number(timerSel.value) });
+    const targetSel = app.querySelector('[data-do="target"]');
+    if (targetSel) targetSel.onchange = () => call('set_target_score', { value: Number(targetSel.value) });
+    const addBot = app.querySelector('[data-do="addbot"]');
+    if (addBot) addBot.onclick = () => call('add_bot', {});
+    app.querySelectorAll('[data-do="removebot"]').forEach((b) => { b.onclick = () => call('remove_bot', { id: b.dataset.id }); });
     app.querySelectorAll('[data-do="option"]').forEach((b) => {
       b.onchange = () => call('set_option', { key: b.dataset.key, value: b.checked });
     });
@@ -515,7 +631,12 @@
     ['notes', 'Card notes', "Mark what a card is or isn't, and who knows it."],
     ['counter', 'Card counter', "See how many of each card haven't been discarded."],
     ['tracker', 'Score tracker', 'Adds up the cards in your hand that you can see or have noted.'],
+    ['reactions', 'Emoji reactions', 'Send a quick emoji that floats up from your seat.'],
+    ['stickTime', 'Stick reaction time', 'Shows how fast each correct stick was.'],
+    ['replay', 'Round replay', 'Watch the round again, every card face up, once it ends.'],
+    ['bots', 'Bots', 'The host can add computer players to fill seats.'],
   ];
+  const REACTIONS = ['😂', '😮', '😡', '👏', '😭', '🔥'];
   const opt = (g, k) => !!(g.options && g.options[k]);
 
   async function copy(text, msg) {
@@ -749,14 +870,22 @@
     const rows = [...g.results.scores].sort((a, b) => a.score - b.score).map((s) =>
       `<tr class="${winners.includes(s.id) ? 'win' : ''}"><td>${winners.includes(s.id) ? '🏆 ' : ''}${esc(s.name)}${s.id === g.cambioBy ? ' <span class="muted">(called Cambrio)</span>' : ''}</td><td>${s.score} pts</td></tr>`).join('');
     const online = room.players.filter((p) => p.connected).length;
+    const mo = room.matchOver;
+    const moNames = mo ? room.players.filter((p) => mo.winners.includes(p.id)).map((p) => esc(p.name)) : [];
+    const matchHtml = mo
+      ? `<div class="match-over">🏆 ${mo.winners.includes(room.you) ? 'You win the match!' : `${moNames.join(' & ')} win${moNames.length === 1 ? 's' : ''} the match!`}
+          <small>Someone reached ${room.targetScore} points, so the lowest total wins.</small></div>`
+      : room.targetScore ? `<p class="muted" style="margin:0">Playing to ${room.targetScore} points. Totals are on the right.</p>` : '';
     return `
       <div class="results">
+        ${matchHtml}
         <h2>${winners.includes(room.you) ? 'You win!' : `${names.join(' & ')} win${names.length === 1 ? 's' : ''}!`}</h2>
         ${g.results.tieBreak === 'cambio' ? '<p class="muted" style="margin:0">Tie! The Cambrio caller wins ties.</p>' : ''}
         ${g.results.tieBreak === 'lowestCard' ? '<p class="muted" style="margin:0">Tie! Broken by the lowest single card.</p>' : ''}
         <table>${rows}</table>
         <div class="actions" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-          ${isHost ? `<button class="primary" data-do="again" ${online < 2 ? 'disabled' : ''}>Play again</button>` : '<span class="muted">Waiting for the host to start the next round…</span>'}
+          ${isHost ? `<button class="primary" data-do="again" ${online < 2 ? 'disabled' : ''}>${mo ? 'Start a new match' : room.targetScore ? 'Next round' : 'Play again'}</button>` : '<span class="muted">Waiting for the host to start the next round…</span>'}
+          ${g.replay && g.replay.length ? '<button class="secondary" data-do="replay">▶ Watch replay</button>' : ''}
           <button class="ghost small" data-do="leave">Leave room</button>
         </div>
       </div>`;
@@ -811,8 +940,8 @@
       ? `<div class="drawn-slot">${cardHtml(drawn, { pop: popDrawn && !S.inFlight.has('drawn'), revealed: myTurn, key: 'drawn' })}<span>${myTurn ? 'Your card' : `${esc(holder ? holder.name : '')}'s card`}</span></div>`
       : `<div class="drawn-slot">${cardHtml(null, { ghost: true, key: 'drawn' })}<span>&nbsp;</span></div>`;
 
-    const totals = room.players.length && room.round > 1
-      ? `<div class="scores"><h3>Room totals</h3><table>${[...room.players].sort((a, b) => a.totalScore - b.totalScore).map((p) => `<tr><td>${esc(p.name)}</td><td>${p.wins}🏆 · ${p.totalScore} pts</td></tr>`).join('')}</table></div>` : '';
+    const totals = room.players.length && (room.round > 1 || (room.targetScore && g.phase === 'ended'))
+      ? `<div class="scores"><h3>Room totals${room.targetScore ? ` · to ${room.targetScore}` : ''}</h3><table>${[...room.players].sort((a, b) => a.totalScore - b.totalScore).map((p) => `<tr><td>${esc(p.name)}</td><td>${p.wins}🏆 · ${p.totalScore} pts</td></tr>`).join('')}</table></div>` : '';
     const showPanel = g.phase === 'play' && myIdx !== -1;
 
     app.innerHTML = `
@@ -838,6 +967,10 @@
           ${totals}
           ${g.phase !== 'ended' ? `<button class="ghost small" data-do="leave">${confirming('leave') ? 'Tap again to leave' : 'Leave room'}</button>` : ''}
         </aside>
+        ${opt(g, 'reactions') && myIdx !== -1 ? `<div class="react-box ${S.reactOpen ? 'open' : ''}">
+          ${S.reactOpen ? `<div class="react-pick">${REACTIONS.map((e) => `<button data-do="emoji" data-emoji="${e}" aria-label="Send ${e}">${e}</button>`).join('')}</div>` : ''}
+          <button class="react-btn" data-do="react" aria-label="Send a reaction" aria-expanded="${!!S.reactOpen}">😀</button>
+        </div>` : ''}
       </section>`;
     const log = document.getElementById('log');
     log.scrollTop = log.scrollHeight;
@@ -956,6 +1089,9 @@
     if (el.disabled) return;
     if (d === 'ready') return act('ready');
     if (d === 'again') return call('start_game', {});
+    if (d === 'replay') return g && g.replay && openReplay(g.replay, g.players);
+    if (d === 'react') { S.reactOpen = !S.reactOpen; return render(); }
+    if (d === 'emoji') { S.reactOpen = false; render(); return call('react', { emoji: el.dataset.emoji }); }
     if (d === 'leave') {
       if (S.room.game && S.room.game.phase !== 'ended' && !confirming('leave')) return askToConfirm('leave');
       S.confirm = null;
@@ -1093,6 +1229,65 @@
   }
 
   document.getElementById('rulesBtn').onclick = () => document.getElementById('rulesDialog').showModal();
+
+  // ---------- look: card backs and table colours (saved on this device) ----------
+  const CARD_BACKS = [['red', 'Classic red'], ['navy', 'Midnight'], ['gold', 'Black & gold'], ['teal', 'Ocean']];
+  const TABLES = [['green', 'Green felt'], ['blue', 'Blue'], ['purple', 'Purple'], ['charcoal', 'Charcoal']];
+  const look = {
+    back: CARD_BACKS.some(([k]) => k === store.get('cambrioBack')) ? store.get('cambrioBack') : 'red',
+    table: TABLES.some(([k]) => k === store.get('cambrioTable')) ? store.get('cambrioTable') : 'green',
+  };
+  function applyLook() {
+    document.body.dataset.back = look.back;
+    document.body.dataset.table = look.table;
+  }
+  function setLook(k, v) { look[k] = v; store.set(k === 'back' ? 'cambrioBack' : 'cambrioTable', v); applyLook(); }
+  applyLook();
+
+  // ---------- tutorial ----------
+  const TUTORIAL = [
+    ['Welcome to Cambrio', `<p>The goal: have the <b>lowest total</b> when the round ends.</p>
+      <div class="tut-cards"></div>
+      <p>Red King −1, Joker 0, Ace 1, 2–10 face value, Jack 11, Queen 12, Black King 13.</p>`],
+    ['Peek, then remember', `<p>You get 4 face-down cards (or 6). At the start you see your <b>bottom row</b> for 10 seconds. Then they flip face down, so remember them!</p>`],
+    ['Your turn', `<p>Press <b>Draw</b>. Then either select one of your cards and press <b>Swap</b> to keep the new card, or press <b>Discard</b> to throw it away.</p>
+      <div class="tut-buttons"><span>Draw</span><span>Swap</span><span>Discard</span></div>`],
+    ['Powers', `<p>Discard a card you just drew to use its power:</p>
+      <ul><li><b>7, 8:</b> look at one of your cards</li><li><b>9, 10:</b> look at someone else's card</li><li><b>J, Q:</b> swap any two cards blind</li><li><b>Black King:</b> look at two cards, then you may swap two</li></ul>`],
+    ['Sticking', `<p>See a card that matches the top of the discard pile? Select it and press <b>Stick</b>, any time, even on someone else's turn.</p>
+      <p>Right on your own card: it's gone. Right on someone else's: you give them one of yours. Wrong: it goes back and you take a penalty card.</p>`],
+    ['Calling Cambrio', `<p>Think you're lowest? Press <b>Call Cambrio</b> instead of drawing. Everyone else gets one last turn, then there's a last chance to stick, and all cards are shown.</p>
+      <p>The caller wins ties.</p>`],
+    ["You're ready!", `<p>Selecting: tap a card, or hold and drag across several. The full rules are always under <b>Rules</b> at the top.</p>
+      <p>Private rooms have extra options like notes, a score tracker, emoji reactions and bots.</p>`],
+  ];
+  function openTutorial(i = 0) {
+    let dlg = document.getElementById('tutorialDialog');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'tutorialDialog';
+      dlg.className = 'tutorial';
+      document.body.appendChild(dlg);
+    }
+    const [title, body] = TUTORIAL[i];
+    const demo = ['K', 'JOKER', '7', 'Q'].map((r, j) => cardHtml(r === 'JOKER' ? { rank: r } : { rank: r, suit: ['H', 'S', 'D', 'C'][j] })).join('');
+    dlg.innerHTML = `<div class="rules">
+      <div class="tut-step">Step ${i + 1} of ${TUTORIAL.length}</div>
+      <h2>${title}</h2>
+      ${body.replace('<div class="tut-cards"></div>', `<div class="tut-cards">${demo}</div>`)}
+      <div class="tut-nav">
+        <button class="ghost small" data-t="close">Close</button>
+        ${i > 0 ? '<button class="secondary small" data-t="back">Back</button>' : ''}
+        ${i < TUTORIAL.length - 1 ? '<button class="primary small" data-t="next">Next</button>' : '<button class="primary small" data-t="close">Let\'s play</button>'}
+      </div></div>`;
+    dlg.querySelectorAll('[data-t]').forEach((b) => {
+      b.onclick = () => {
+        if (b.dataset.t === 'close') return dlg.close();
+        openTutorial(i + (b.dataset.t === 'next' ? 1 : -1));
+      };
+    });
+    if (!dlg.open) dlg.showModal();
+  }
 
   // ---------- boot ----------
   const params = new URLSearchParams(location.search);
