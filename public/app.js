@@ -876,7 +876,14 @@
     const top = opponents.slice(l, l + t);
     const right = opponents.slice(l + t);
     const cls = [`seats-${opponents.length}`, top.length ? '' : 'no-top', left.length ? '' : 'no-sides'].join(' ');
-    return { left, top, right, cls };
+    // On wide screens every seat sits at an even angle round the oval (you at the bottom).
+    const total = opponents.length + 1;
+    const spot = (p) => {
+      const k = opponents.indexOf(p) + 1;
+      const a = ((90 + (k * 360) / total) * Math.PI) / 180;
+      return `--x:${(50 + 42 * Math.cos(a)).toFixed(2)}%;--y:${(50 + 40 * Math.sin(a)).toFixed(2)}%`;
+    };
+    return { left, top, right, cls, spot };
   }
 
   function renderGame(room) {
@@ -937,9 +944,9 @@
       <section class="table ${showPanel ? 'playing' : ''}">
         <div class="play-area">
           <div class="ring ${ring.cls}">
-          <div class="opponents ring-left">${ring.left.map((p) => seatHtml(g, p, me, false)).join('')}</div>
-          <div class="opponents ring-top">${ring.top.map((p) => seatHtml(g, p, me, false)).join('')}</div>
-          <div class="opponents ring-right">${ring.right.map((p) => seatHtml(g, p, me, false)).join('')}</div>
+          <div class="opponents ring-left">${ring.left.map((p) => `<div class="spot" style="${ring.spot(p)}">${seatHtml(g, p, me, false)}</div>`).join('')}</div>
+          <div class="opponents ring-top">${ring.top.map((p) => `<div class="spot" style="${ring.spot(p)}">${seatHtml(g, p, me, false)}</div>`).join('')}</div>
+          <div class="opponents ring-right">${ring.right.map((p) => `<div class="spot" style="${ring.spot(p)}">${seatHtml(g, p, me, false)}</div>`).join('')}</div>
           <div class="mid">
           <div class="center-row">
             <div class="pile">${g.deckCount ? cardHtml({ hidden: true }, { clickable: canDraw, key: 'deck', data: { do: 'draw' } }) : cardHtml(null, { key: 'deck' })}<span>Deck · ${g.deckCount}</span></div>

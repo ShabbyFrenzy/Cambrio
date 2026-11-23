@@ -473,3 +473,21 @@ body.ingame { background: #14181e radial-gradient(ellipse at 50% 30%, #2a313b, #
 body.ingame .topbar, body.ingame header { background: rgba(0,0,0,.35); }
 .ring.no-sides .mid { padding: 18px 70px; }
 @media (max-width: 520px) { .ring.no-sides .mid { padding: 16px 6px; } }
+
+/* Wide screens: seats spread evenly round the oval, positioned by angle (see seatRing in app.js). */
+@media (min-width: 1180px) {
+  .ring { display: block; height: 800px; }
+  .ring-left, .ring-top, .ring-right { display: contents; }
+  .ring::before, .ring.no-top::before, .ring.no-sides::before { inset: 11% 9%; }
+  .ring .spot { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); }
+  .ring .mid { position: absolute; left: 50%; top: 47%; transform: translate(-50%, -50%); width: min(520px, 52%); padding: 0; }
+  .ring .center-row { gap: 12px; }
+  .ring .drawn-slot { min-width: 76px; }
+  .ring.seats-6 .opponents .hand, .ring.seats-7 .opponents .hand { --card-w: 38px; }
+  .ring.no-sides .mid { padding: 0; }
+  .ring .mine { position: absolute; left: 50%; top: 89%; transform: translate(-50%, -50%); }
+  .ring .me .hand { --card-w: 60px; }
+  .ring .opponents .hand { --card-w: 42px; }
+  .ring .seat:not(.me) { padding: 8px 10px 10px; }
+  .ring .mid:has(.results) { z-index: 5; }
+}
