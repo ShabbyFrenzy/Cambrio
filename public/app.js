@@ -292,8 +292,8 @@
   }
 
   // Hard mode notes: ranks a card is (green) or isn't (red, crossed out).
-  const NOTE_RANKS = ['JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-  const rankShort = (r) => (r === 'JOKER' ? 'Jk' : r);
+  const NOTE_RANKS = ['JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-red', 'K-black'];
+  const rankShort = (r) => ({ JOKER: 'Jk', 'K-red': 'K♥', 'K-black': 'K♠' }[r] || r);
   function noteHtml(note) {
     const is = (note.is || []).map((r) => `<i class="is">${rankShort(r)}</i>`).join('');
     const not = (note.not || []).map((r) => `<i class="not">${rankShort(r)}</i>`).join('');
@@ -496,6 +496,11 @@
     };
   }
 
+  function needsTwo(g, me) {
+    const pw = g.power;
+    return g.phase === 'play' && g.current === me && g.stage === 'power' && !!pw && (pw.type === 'swap' || pw.type === 'lookSwap');
+  }
+
   function confirming(kind) {
     return S.confirm && S.confirm.kind === kind && S.confirm.until > Date.now();
   }
@@ -660,6 +665,7 @@
     // Drop selections that no longer point at a card.
     S.selected = S.selected.filter((t) => cardAtView(g, t));
     if (g.phase !== 'play') S.selected = [];
+    if (!needsTwo(g, me) && S.selected.length > 1) S.selected = S.selected.slice(-1);
     if (g.turnMsLeft !== null && g.turnMsLeft !== undefined) {
       S.turnFrozen = g.paused ? g.turnMsLeft : null;
       const deadline = Date.now() + g.turnMsLeft;
@@ -740,7 +746,9 @@
     if (!c || !c.hidden) return '';
     const note = c.note || { is: [], not: [] };
     const owner = t.pid === S.room.you ? 'your' : `${nameIn(g, t.pid)}'s`;
-    const chips = NOTE_RANKS.map((r) => {
+    // A rank with every card already discarded can't be this card, so it isn't offered.
+    const left = g.unplayed || {};
+    const chips = NOTE_RANKS.filter((r) => (left[r] || 0) > 0 || note.is.includes(r) || note.not.includes(r)).map((r) => {
       const st = note.is.includes(r) ? 'is' : note.not.includes(r) ? 'not' : '';
       return `<button class="chip ${st}" data-do="note" data-rank="${r}" aria-label="${r}${st ? (st === 'is' ? ' (is)' : ' (is not)') : ''}">${rankShort(r)}</button>`;
     }).join('');
@@ -849,14 +857,16 @@
       return render();
     }
 
-    // Tapping a card selects or unselects it (up to 2 at a time).
+    // Tapping a card selects or unselects it. Only one card at a time, except
+    // for the J, Q and black K powers, which need two.
     if (el.dataset.pid !== undefined && el.classList.contains('clickable')) {
       const t = { pid: el.dataset.pid, slot: Number(el.dataset.slot) };
       const i = S.selected.findIndex((x) => x.pid === t.pid && x.slot === t.slot);
       if (i >= 0) S.selected.splice(i, 1);
       else {
         S.selected.push(t);
-        if (S.selected.length > 2) S.selected.shift();
+        const max = needsTwo(g, S.room.you) ? 2 : 1;
+        while (S.selected.length > max) S.selected.shift();
       }
       render();
     }

@@ -36,7 +36,7 @@ const MAX_PLAYERS = 8;
 // Private rooms can pick a mode. easy: cards you have seen stay face up for you.
 // hard: you can write notes on cards and see which cards have not been discarded yet.
 const MODES = ['easy', 'normal', 'hard'];
-const NOTE_RANKS = ['JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const NOTE_RANKS = ['JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-red', 'K-black'];
 
 function isRed(card) {
   return RED.has(card.suit);
