@@ -314,11 +314,13 @@
   }
 
   // Hard mode notes: ranks a card is (green) or isn't (red, crossed out).
-  const NOTE_RANKS = ['JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-red', 'K-black'];
+  // Lowest to highest value: red K (-1), Joker (0), A ... Q, black K (13).
+  const NOTE_RANKS = ['K-red', 'JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-black'];
+  const byValue = (ranks) => ranks.slice().sort((a, b) => NOTE_RANKS.indexOf(a) - NOTE_RANKS.indexOf(b));
   const rankShort = (r) => ({ JOKER: 'Jk', 'K-red': 'K♥', 'K-black': 'K♠' }[r] || r);
   function noteHtml(note) {
-    const is = (note.is || []).map((r) => `<i class="is">${rankShort(r)}</i>`).join('');
-    const not = (note.not || []).map((r) => `<i class="not">${rankShort(r)}</i>`).join('');
+    const is = byValue(note.is || []).map((r) => `<i class="is">${rankShort(r)}</i>`).join('');
+    const not = byValue(note.not || []).map((r) => `<i class="not">${rankShort(r)}</i>`).join('');
     const g = S.room && S.room.game;
     const who = (note.knows || []).map((id) => {
       const p = g && g.players.find((x) => x.id === id);
@@ -520,7 +522,7 @@
       stick: playing && !paused && !!g.discardTop && sel.length === 1 && !!cardAtView(g, sel[0]),
       cambio: myTurn && g.stage === 'draw' && !g.cambioBy,
       // At the very end with no timer, the Cambrio button becomes "No more sticks".
-      done: playing && !paused && g.stage === 'closing' && g.closingMsLeft === null && !(g.doneSticking || []).includes(me),
+      done: playing && !paused && g.stage === 'closing' && !(g.doneSticking || []).includes(me),
     };
   }
 
@@ -547,7 +549,7 @@
         ${btn('skip', a.skip.label, a.skip.enabled)}
         ${btn('give', 'Give', a.give, a.give ? 'primary' : 'secondary')}
         ${opt(g, 'notes') ? `${btn('stick', 'Stick', a.stick, 'primary')}${btn('note', '✎ Note', true, 'secondary note-btn')}` : btn('stick', 'Stick', a.stick, 'primary wide')}
-        ${g.stage === 'closing' && g.closingMsLeft === null
+        ${g.stage === 'closing'
           ? btn('done', (g.doneSticking || []).includes(me) ? 'Waiting for others…' : 'No more sticks', a.done, 'primary wide')
           : btn('cambio', sure ? 'Sure? Tap again' : 'Call Cambrio', a.cambio, `danger wide ${sure ? 'pulse' : ''}`)}
       </div>`;
@@ -612,7 +614,9 @@
         const total = g.players.filter((p) => p.connected).length;
         return `<div class="msg"><b>Last chance to stick!</b> Press <b>No more sticks</b> when you're done. Cards are revealed when everyone has (${done} of ${total}).</div>`;
       }
-      return `<div class="msg"><b>Last chance to stick!</b> Cards are revealed in <b class="countdown">${Math.ceil(closingLeft() / 1000)}</b>…</div>`;
+      const done = (g.doneSticking || []).length;
+      const total = g.players.filter((p) => p.connected).length;
+      return `<div class="msg"><b>Last chance to stick!</b> Cards are revealed in <b class="countdown">${Math.ceil(closingLeft() / 1000)}</b>, or sooner once everyone presses <b>No more sticks</b> (${done} of ${total}).</div>`;
     }
     const stickTip = '<br><span class="muted">Spot a match on the pile? Select that card and press Stick.</span>';
     const last = g.cambioBy ? ' <span class="muted">(final round)</span>' : '';
@@ -794,7 +798,7 @@
     const hasInfo = info.is.length || info.not.length || info.knows.length;
     return `<div class="note-maker" role="dialog" aria-label="Card note">
       <b class="note-title">${title}</b>
-      <span class="muted">Tap a rank once for <b class="is">is</b>, twice for <b class="not">isn't</b>.</span>
+      <span class="muted">Tap a rank once for <b class="not">isn't</b>, twice for <b class="is">is</b>.</span>
       <div class="chips">${chips}</div>
       <span class="muted">Who knows it:</span>
       <div class="chips">${people}</div>
@@ -904,9 +908,10 @@
     if (d === 'notedone') { closeNotes(); return render(); }
     if (d === 'noterank') {
       const info = S.noteInfo; const r = el.dataset.rank;
-      if (info.is.includes(r)) { info.is = info.is.filter((x) => x !== r); info.not.push(r); }
-      else if (info.not.includes(r)) info.not = info.not.filter((x) => x !== r);
-      else info.is.push(r);
+      // One tap: it isn't this. Two taps: it is this. Three: neither.
+      if (info.not.includes(r)) { info.not = info.not.filter((x) => x !== r); info.is.push(r); }
+      else if (info.is.includes(r)) info.is = info.is.filter((x) => x !== r);
+      else info.not.push(r);
       return render();
     }
     if (d === 'noteknows') {
