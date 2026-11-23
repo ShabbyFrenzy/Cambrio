@@ -45,6 +45,9 @@ Open two browser windows (or one normal and one private window) to play against 
 - Sticking: anyone can stick any card (their own or another player's) that matches the rank of the top discard, at any time, as often as they like.
   - A wrong stick: the card goes back where it was and the sticker takes a penalty card.
   - Sticking another player's card: the sticker then gives that player one of their own cards. *(guess)*
+  - The whole table pauses until that card is given (a random card is given after 20 seconds).
+  - To stick: select a card, then press Stick in the action panel.
+- After the final turn there are 5 seconds to stick before the cards are revealed.
 - The Cambrio caller wins ties. Any other tie goes to the player with the lowest single card (a player with no cards left counts as lowest). If that also ties, they share the win.
 
 ## Other guesses (easy to change)

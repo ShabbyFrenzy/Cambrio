@@ -165,7 +165,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .flying.stick-bad .card { outline: 3px solid #ff6b5b; outline-offset: 2px; }
 .discard-stack { position: relative; }
 .discard-stack .stack-top { position: absolute; inset: 0; }
-.stick-hint { font-size: 11px; color: var(--muted); opacity: .8; max-width: 120px; text-align: center; }
 @keyframes flipIn { from { transform: perspective(600px) rotateY(90deg); } to { transform: perspective(600px) rotateY(0); } }
 .flip-in { animation: flipIn .35s ease-out; }
 .card { transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, outline-color .15s; }
@@ -179,6 +178,16 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 @keyframes pop { from { transform: scale(.85); opacity: .3; } to { transform: scale(1); opacity: 1; } }
 .pop { animation: pop .25s ease-out; }
+
+/* ---------- action panel (left of the discard pile) ---------- */
+.action-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 190px; }
+.action-panel .act { padding: 7px 6px; font-size: 13px; border-radius: 10px; white-space: nowrap; }
+.action-panel .wide { grid-column: span 2; }
+.action-panel .act:disabled { opacity: 1; background: rgba(255,255,255,.07); color: rgba(244,241,232,.35); box-shadow: none; }
+.action-panel .act:not(:disabled):active { transform: translateY(1px); }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(192,57,43,.7); } 50% { box-shadow: 0 0 0 6px rgba(192,57,43,0); } }
+.pulse { animation: pulse 1s infinite; }
+.card.selected { outline: 3px solid var(--gold); outline-offset: 2px; transform: translateY(-6px); box-shadow: 0 0 0 6px rgba(242,193,78,.25), 0 8px 16px rgba(0,0,0,.4); }
 
 /* ---------- results ---------- */
 .results { background: var(--panel-strong); border-radius: 14px; padding: 16px; text-align: center; display: grid; gap: 10px; }
@@ -208,6 +217,13 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
   .log { max-height: 200px; }
 }
 @media (max-width: 520px) {
+  .center-row { gap: 6px; flex-wrap: nowrap; }
+  .action-panel { width: 136px; gap: 4px; flex: none; }
+  .action-panel .act { font-size: 11.5px; padding: 6px 2px; }
+  .center-row .pile .card { --card-w: 52px; }
+  .center-row .drawn-slot { min-width: 0; }
+  .center-row .drawn-slot .card { --card-w: 58px; }
+  .pile span, .drawn-slot span { font-size: 11px; }
   .me .hand { --card-w: 64px; }
   .opponents .hand { --card-w: 40px; }
   .pile .card { --card-w: 60px; }

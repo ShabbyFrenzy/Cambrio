@@ -29,6 +29,8 @@ const PEEK_SLOTS = { 4: [2, 3], 6: [3, 4, 5] };
 const INITIAL_PEEK_SLOTS = PEEK_SLOTS[4];
 const MAX_PLAYERS_BY_HAND = { 4: 8, 6: 6 }; // keep enough cards in the deck
 const MIN_PLAYERS = 2;
+const STICK_WINDOW_MS = 5000; // after the final turn, time left to stick before scoring
+const GIVE_TIMEOUT_MS = 20000; // the server gives a random card if a sticker takes longer
 const MAX_PLAYERS = 8;
 
 function isRed(card) {
@@ -97,6 +99,8 @@ class Game {
       throw new GameError(`At most ${maxPlayers} players with ${this.handSize} cards each`);
     }
     this.rng = opts.rng || Math.random;
+    this.now = opts.now || Date.now;
+    this.closingUntil = null;
     this.deck = opts.deck ? opts.deck.slice() : shuffle(buildDeck(), this.rng);
     this.discard = [];
     this.players = players.map((p) => ({
@@ -191,6 +195,11 @@ class Game {
       give: this.give,
     }[action.type];
     if (!handler) throw new GameError('Unknown action');
+    // Everything pauses while someone owes a card after sticking.
+    const owing = Object.keys(this.pendingGive);
+    if (owing.length && !(action.type === 'give' && this.pendingGive[pid])) {
+      throw new GameError(`Wait for ${this.name(owing[0])} to give a card`);
+    }
     this.fx = [];
     const out = handler.call(this, pid, action) || {};
     this.seq++;
@@ -394,6 +403,7 @@ class Game {
     this.move({ pid, slot }, { pid: to.id, slot: toSlot });
     delete this.pendingGive[pid];
     this.addLog(`${p.name} gave their card #${slot + 1} to ${to.name}.`);
+    if (this.stage === 'closing' && this.now() >= this.closingUntil && !Object.keys(this.pendingGive).length) this.finish();
     return {};
   }
 
@@ -405,7 +415,7 @@ class Game {
     this.stage = 'draw';
     if (this.cambioBy && this.turnsLeft !== null) {
       if (this.current().id !== this.cambioBy) this.turnsLeft--;
-      if (this.turnsLeft <= 0) return this.finish();
+      if (this.turnsLeft <= 0) return this.startClosing();
     }
     this.turn = (this.turn + 1) % this.players.length;
     this.skipDisconnected();
@@ -416,9 +426,9 @@ class Game {
       const p = this.current();
       if (p.connected) return;
       if (this.cambioBy) {
-        if (p.id === this.cambioBy) return this.finish();
+        if (p.id === this.cambioBy) return this.startClosing();
         this.turnsLeft--;
-        if (this.turnsLeft <= 0) return this.finish();
+        if (this.turnsLeft <= 0) return this.startClosing();
       }
       this.addLog(`${p.name} is away, so their turn was skipped.`);
       this.turn = (this.turn + 1) % this.players.length;
@@ -442,7 +452,7 @@ class Game {
 
   /** Called by the server when a player has been away too long on their turn. */
   forfeitTurn(pid) {
-    if (this.phase !== 'play' || this.current().id !== pid) return false;
+    if (this.phase !== 'play' || this.stage === 'closing' || this.current().id !== pid) return false;
     this.fx = [];
     if (this.drawn) {
       this.discardCard(this.drawn);
@@ -481,7 +491,7 @@ class Game {
       this.drawn = null; this.drawnFrom = null; this.power = null; this.stage = 'draw';
       if (this.cambioBy) {
         this.turnsLeft--;
-        if (this.turnsLeft <= 0) return this.finish();
+        if (this.turnsLeft <= 0) return this.startClosing();
       }
     } else if (this.cambioBy) {
       // Recount: remaining turns can't exceed players still to go.
@@ -490,6 +500,41 @@ class Game {
     if (this.phase === 'peek') this.maybeStartPlay();
     else this.skipDisconnected();
     this.seq++;
+  }
+
+  /** The final turn is over: give everyone a few seconds to stick, then score. */
+  startClosing() {
+    this.stage = 'closing';
+    this.drawn = null;
+    this.power = null;
+    this.closingUntil = this.now() + STICK_WINDOW_MS;
+    this.addLog(`Last chance to stick! Cards are revealed in ${STICK_WINDOW_MS / 1000} seconds.`);
+  }
+
+  /** Called by the server when the sticking window may be over. Returns true if the game ended. */
+  tryFinish() {
+    if (this.phase !== 'play' || this.stage !== 'closing') return false;
+    if (this.now() < this.closingUntil) return false;
+    if (Object.keys(this.pendingGive).length) return false; // wait for the give
+    this.finish();
+    this.seq++;
+    return true;
+  }
+
+  /** Called by the server when a sticker takes too long to give a card. */
+  autoGive(pid) {
+    const owed = this.pendingGive[pid];
+    if (!owed || this.phase !== 'play') return false;
+    const p = this.player(pid);
+    const slots = p.hand.map((c, i) => (c ? i : -1)).filter((i) => i >= 0);
+    if (!slots.length) { delete this.pendingGive[pid]; this.seq++; return true; }
+    const slot = slots[Math.floor(this.rng() * slots.length)];
+    this.fx = [];
+    this.give(pid, { slot });
+    this.addLog(`${p.name} took too long, so a random card was given.`);
+    this.seq++;
+    this.fxSeq++;
+    return true;
   }
 
   finish() {
@@ -532,7 +577,7 @@ class Game {
   // ---------- per-player view ----------
   view(pid) {
     const ended = this.phase === 'ended';
-    const cur = this.phase === 'play' ? this.current() : null;
+    const cur = this.phase === 'play' && this.stage !== 'closing' ? this.current() : null;
     const me = this.players.find((p) => p.id === pid);
     return {
       seq: this.seq,
@@ -569,6 +614,7 @@ class Game {
       } : null,
       cambioBy: this.cambioBy,
       turnsLeft: this.turnsLeft,
+      closingMsLeft: this.stage === 'closing' ? Math.max(0, this.closingUntil - this.now()) : null,
       results: this.results,
       log: this.log.slice(-40),
       youAreIn: !!me,
@@ -578,5 +624,5 @@ class Game {
 
 module.exports = {
   Game, GameError, buildDeck, cardValue, cardPower, cardLabel,
-  HAND_SIZE, HAND_SIZES, MIN_PLAYERS, MAX_PLAYERS, MAX_PLAYERS_BY_HAND, INITIAL_PEEK_SLOTS, PEEK_SLOTS,
+  STICK_WINDOW_MS, GIVE_TIMEOUT_MS, HAND_SIZE, HAND_SIZES, MIN_PLAYERS, MAX_PLAYERS, MAX_PLAYERS_BY_HAND, INITIAL_PEEK_SLOTS, PEEK_SLOTS,
 };

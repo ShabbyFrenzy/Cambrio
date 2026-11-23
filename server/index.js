@@ -4,7 +4,7 @@ const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
 const rooms = require('./rooms');
-const { GameError } = require('./game');
+const { GameError, GIVE_TIMEOUT_MS } = require('./game');
 
 const PORT = process.env.PORT || 3000;
 const TURN_TIMEOUT_MS = 45 * 1000; // skip an away player's turn after this long
@@ -47,11 +47,42 @@ function socketsFor(room, playerId) {
 
 // Skip the turn of a player who stays away too long.
 const turnTimers = new Map(); // code -> timeout
+const closeTimers = new Map(); // code -> timeout for the end-of-round sticking window
+const giveTimers = new Map(); // "code:playerId" -> timeout for a sticker who must give a card
+
+function checkTimers(room) {
+  const g = room.game;
+  // End the sticking window on time (or as soon as any pending give is done).
+  clearTimeout(closeTimers.get(room.code));
+  closeTimers.delete(room.code);
+  if (g && g.phase === 'play' && g.stage === 'closing') {
+    const wait = Math.max(0, g.closingUntil - Date.now()) + 50;
+    closeTimers.set(room.code, setTimeout(() => {
+      closeTimers.delete(room.code);
+      if (room.game === g && g.tryFinish()) broadcast(room);
+    }, wait).unref());
+  }
+  // A sticker who never gives a card would freeze the table: give a random one.
+  for (const pid of Object.keys((g && g.pendingGive) || {})) {
+    const k = `${room.code}:${pid}`;
+    if (giveTimers.has(k)) continue;
+    giveTimers.set(k, setTimeout(() => {
+      giveTimers.delete(k);
+      if (room.game === g && g.autoGive(pid)) {
+        g.tryFinish();
+        broadcast(room);
+        checkAwayTurn(room);
+      }
+    }, GIVE_TIMEOUT_MS).unref());
+  }
+}
+
 function checkAwayTurn(room) {
+  checkTimers(room);
   clearTimeout(turnTimers.get(room.code));
   turnTimers.delete(room.code);
   const g = room.game;
-  if (!g || g.phase !== 'play') return;
+  if (!g || g.phase !== 'play' || g.stage === 'closing') return;
   const cur = g.current();
   if (cur.connected) return;
   turnTimers.set(room.code, setTimeout(() => {
