@@ -723,10 +723,8 @@
     const revealedFromPower = (g.power && g.power.revealed) || [];
     const cols = p.slots.length > 4 ? 'wide' : '';
     const selectable = g.phase === 'play' && g.players.some((x) => x.id === me);
-    // Opponents' hands are turned round, as if you sat across the table from them:
-    // their bottom row (the one they peeked at) is the top row from where you sit.
+    // Every hand reads the same way: #1 #2 on top, #3 #4 underneath (or 1-3 over 4-6).
     const order = p.slots.map((_, i) => i);
-    if (!isMe) order.reverse();
     const cards = order.map((slot) => [p.slots[slot], slot]).map(([c, slot]) => {
       let card = c;
       let revealed = false;
