@@ -271,3 +271,22 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 /* No box around your own hand or the note picker. */
 .mine .seat, .mine .seat.turn { background: transparent; border-color: transparent; box-shadow: none; }
 .note-bar { background: transparent; padding: 4px 0; }
+
+/* Notes: who knows a card, and cards picked for a note */
+.card .knows-row { position: absolute; top: 3%; left: 3%; right: 3%; z-index: 1; display: flex; flex-wrap: wrap; gap: 2px; justify-content: center;
+  font-size: calc(var(--card-w) * .15); line-height: 1.1; font-weight: 700; }
+.card .knows-row i { font-style: normal; background: #7cc4ff; color: #0b2233; padding: 0 3px; border-radius: 4px; }
+.card.note-pick { outline: 3px dashed #7cc4ff; outline-offset: 3px; }
+.note-bar.open { gap: 8px; }
+.chip.who.on { background: #7cc4ff; color: #0b2233; border-color: #7cc4ff; }
+.note-bar .chips .small { min-width: 0; }
+
+/* Flash a card someone looked at (blue) or that was swapped (orange) */
+@keyframes flashLook { 0%, 100% { box-shadow: 0 0 0 3px rgba(124,196,255,.95), 0 0 18px 6px rgba(124,196,255,.7); } 50% { box-shadow: 0 0 0 3px rgba(124,196,255,.3), 0 0 4px 1px rgba(124,196,255,.2); } }
+@keyframes flashSwap { 0%, 100% { box-shadow: 0 0 0 3px rgba(255,159,67,.95), 0 0 18px 6px rgba(255,159,67,.7); } 50% { box-shadow: 0 0 0 3px rgba(255,159,67,.3), 0 0 4px 1px rgba(255,159,67,.2); } }
+.card.flash-look { animation: flashLook .8s ease-in-out infinite; }
+.card.flash-swap { animation: flashSwap .8s ease-in-out infinite; }
+.card .flash-badge { position: absolute; top: -9px; right: -9px; z-index: 2; width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; background: #fff; color: #222; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.card.flash-swap .flash-badge { background: #ff9f43; color: #fff; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .card.flash-look, .card.flash-swap { animation: none; box-shadow: 0 0 0 3px #7cc4ff; } .card.flash-swap { box-shadow: 0 0 0 3px #ff9f43; } }

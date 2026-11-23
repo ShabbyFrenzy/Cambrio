@@ -301,7 +301,8 @@ class Game {
     this.discardCard(old);
     this.move({ zone: 'drawn' }, { pid, slot });
     this.move({ pid, slot }, { zone: 'discard' }, old);
-    this.addLog(`${p.name} swapped it into their hand and discarded the ${cardLabel(old)}.`);
+    this.fx.push({ kind: 'swapped', at: [{ pid, slot }] });
+    this.addLog(`${p.name} swapped the drawn card into their card #${slot + 1} and discarded the ${cardLabel(old)} from it.`);
     this.endTurn();
   }
 
@@ -381,6 +382,7 @@ class Game {
       const [a, b] = targets.map((t) => ({ pid: t.pid, slot: t.slot }));
       this.move(a, b);
       this.move(b, a);
+      this.fx.push({ kind: 'swapped', at: [a, b] });
       this.addLog(`${this.name(pid)} swapped ${this.describeTarget(pid, targets[0])} with ${this.describeTarget(pid, targets[1])}.`);
       this.endTurn();
       return {};
@@ -429,7 +431,7 @@ class Game {
       owner.hand[t.slot] = null;
       this.discardCard(card);
       this.fx.push({ kind: 'stick', by: pid, at: { pid: t.pid, slot: t.slot }, card, ok: true });
-      this.addLog(`${p.name} stuck ${whose} ${cardLabel(card)} on the pile!`);
+      this.addLog(`${p.name} stuck ${whose} card #${t.slot + 1} (${cardLabel(card)}) on the pile!`);
       if (owner.id !== pid && p.hand.some(Boolean)) {
         this.pendingGive[pid] = { to: owner.id, slot: t.slot };
         if (this.pauseStart === null) this.pauseStart = this.now();
@@ -444,23 +446,40 @@ class Game {
     if (penalty) {
       p.hand.push(penalty);
       this.move({ zone: 'deck' }, { pid, slot: p.hand.length - 1 });
+      this.fx.push({ kind: 'swapped', at: [{ pid, slot: p.hand.length - 1 }] });
     }
-    this.addLog(`${p.name} tried to stick ${whose} ${cardLabel(card)} on a ${cardLabel(top)}. Wrong! The card goes back and ${p.name} takes a penalty card.`);
+    this.addLog(`${p.name} tried to stick ${whose} card #${t.slot + 1} (${cardLabel(card)}) on a ${cardLabel(top)}. Wrong! The card goes back${penalty ? ` and ${p.name} takes a penalty card as their card #${p.hand.length}` : ''}.`);
     return {};
   }
 
-  // Hard mode: mark what a card is or isn't. note = {is:[ranks], not:[ranks]}; empty clears it.
-  setNote(pid, { target, note }) {
+  // Hard mode notes. Pick the info first, then the cards it applies to:
+  //   { targets:[{pid,slot}...], add:{ is:[ranks], not:[ranks], knows:[playerIds] } } adds to each card's note,
+  //   { targets, clear:true } wipes those cards' notes. Notes are private and follow the card.
+  setNote(pid, { targets, target, add, note, clear }) {
     if (this.mode !== 'hard') throw new GameError('Notes are only in hard mode');
     if (this.phase === 'ended') throw new GameError('The game is over');
     if (!this.known.has(pid)) throw new GameError('You are not in this game');
-    const card = this.cardAt(target && target.pid, target && target.slot);
-    const clean = (list) => [...new Set(Array.isArray(list) ? list : [])].filter((r) => NOTE_RANKS.includes(r));
-    const is = clean(note && note.is);
-    const not = clean(note && note.not).filter((r) => !is.includes(r));
+    const list = Array.isArray(targets) ? targets : target ? [target] : [];
+    if (!list.length || list.length > 60) throw new GameError('Pick the cards for this note');
+    const cards = list.map((t) => this.cardAt(t && t.pid, t && t.slot));
     const notes = this.notes.get(pid);
-    if (is.length || not.length) notes.set(card, { is, not });
-    else notes.delete(card);
+    const ranks = (l) => [...new Set(Array.isArray(l) ? l : [])].filter((r) => NOTE_RANKS.includes(r));
+    const ids = (l) => [...new Set(Array.isArray(l) ? l : [])].filter((id) => this.players.some((p) => p.id === id));
+    if (clear) { for (const c of cards) notes.delete(c); return {}; }
+    const a = add || note || {};
+    const is = ranks(a.is);
+    const not = ranks(a.not).filter((r) => !is.includes(r));
+    const knows = ids(a.knows);
+    if (!is.length && !not.length && !knows.length) throw new GameError('Pick something to note first');
+    for (const c of cards) {
+      const old = notes.get(c) || { is: [], not: [], knows: [] };
+      const next = {
+        is: [...new Set([...old.is.filter((r) => !not.includes(r)), ...is])],
+        not: [...new Set([...old.not.filter((r) => !is.includes(r)), ...not])],
+        knows: [...new Set([...(old.knows || []), ...knows])],
+      };
+      notes.set(c, next);
+    }
     return {};
   }
 
@@ -476,8 +495,9 @@ class Game {
     if (owed.slot < to.hand.length && !to.hand[owed.slot]) to.hand[owed.slot] = card;
     else { to.hand.push(card); toSlot = to.hand.length - 1; }
     this.move({ pid, slot }, { pid: to.id, slot: toSlot });
+    this.fx.push({ kind: 'swapped', at: [{ pid: to.id, slot: toSlot }] });
     delete this.pendingGive[pid];
-    this.addLog(`${p.name} gave their card #${slot + 1} to ${to.name}.`);
+    this.addLog(`${p.name} gave their card #${slot + 1} to ${to.name}, as ${to.name}'s card #${toSlot + 1}.`);
     if (!Object.keys(this.pendingGive).length) this.endPause();
     if (this.stage === 'closing') this.tryFinish();
     return {};

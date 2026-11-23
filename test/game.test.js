@@ -259,7 +259,10 @@ test('animation events never leak hidden cards', () => {
   assert.strictEqual(st.kind, 'stick');
   assert.strictEqual(st.ok, true);
   g.act('a', { type: 'give', slot: 0 });
-  assert.deepStrictEqual(g.view('b').fx.events, [{ kind: 'move', from: { pid: 'a', slot: 0 }, to: { pid: 'b', slot: 3 }, card: null }]);
+  assert.deepStrictEqual(g.view('b').fx.events, [
+    { kind: 'move', from: { pid: 'a', slot: 0 }, to: { pid: 'b', slot: 3 }, card: null },
+    { kind: 'swapped', at: [{ pid: 'b', slot: 3 }] },
+  ]);
 });
 
 test('6-card hands deal 6 and peek the bottom three', () => {
@@ -415,16 +418,16 @@ test('normal mode hides seen cards and hard mode keeps notes on cards', () => {
   const g = modeGame('hard', [C('9', 'H'), C('J', 'H')]);
   assert.ok(g.view('a').players[0].slots.every((c) => c.hidden));
   g.act('a', { type: 'note', target: { pid: 'b', slot: 1 }, note: { is: ['6', 'X'], not: ['K-black', 'K', '6'] } });
-  assert.deepStrictEqual(g.view('a').players[1].slots[1].note, { is: ['6'], not: ['K-black'] });
+  assert.deepStrictEqual(g.view('a').players[1].slots[1].note, { is: ['6'], not: ['K-black'], knows: [] });
   assert.strictEqual(g.view('b').players[1].slots[1].note, undefined); // private
   // The note follows the card when a J/Q swap moves it.
   g.act('a', { type: 'draw_deck' }); g.act('a', { type: 'discard' }); // 9H: peek other
   g.act('a', { type: 'power_pick', targets: [{ pid: 'b', slot: 0 }] });
   g.act('b', { type: 'draw_deck' }); g.act('b', { type: 'discard' }); // JH: swap
   g.act('b', { type: 'power_pick', targets: [{ pid: 'b', slot: 1 }, { pid: 'a', slot: 0 }] });
-  assert.deepStrictEqual(g.view('a').players[0].slots[0].note, { is: ['6'], not: ['K-black'] });
+  assert.deepStrictEqual(g.view('a').players[0].slots[0].note, { is: ['6'], not: ['K-black'], knows: [] });
   // Notes work while the table is paused, and clearing removes them.
-  g.act('a', { type: 'note', target: { pid: 'a', slot: 0 }, note: {} });
+  g.act('a', { type: 'note', target: { pid: 'a', slot: 0 }, clear: true });
   assert.strictEqual(g.view('a').players[0].slots[0].note, undefined);
   const left = g.view('a').unplayed;
   assert.strictEqual(left['9'], undefined); // the only 9 was discarded
@@ -467,4 +470,33 @@ test('quick play: 30 second turns, and the peek countdown waits for everyone to 
   assert.strictEqual(g.view('x').peekMsLeft, null);
   g.setConnected('y', true);
   assert.ok(g.view('x').peekMsLeft > 9000);
+});
+
+test('hard mode: one note can go on many cards, adds to what is there, and records who knows', () => {
+  const g = modeGame('hard', [C('9', 'H')]);
+  const cards = [{ pid: 'b', slot: 0 }, { pid: 'b', slot: 1 }, { pid: 'a', slot: 3 }];
+  g.act('a', { type: 'note', targets: cards, add: { not: ['K-black'], knows: ['b', 'zzz'] } });
+  g.act('a', { type: 'note', targets: [cards[0]], add: { is: ['5'], knows: ['a'] } });
+  const v = g.view('a');
+  assert.deepStrictEqual(v.players[1].slots[0].note, { is: ['5'], not: ['K-black'], knows: ['b', 'a'] });
+  assert.deepStrictEqual(v.players[0].slots[3].note, { is: [], not: ['K-black'], knows: ['b'] });
+  g.act('a', { type: 'note', targets: [cards[1]], add: { is: ['K-black'] } }); // "is" replaces an earlier "isn't"
+  assert.deepStrictEqual(g.view('a').players[1].slots[1].note.is, ['K-black']);
+  assert.deepStrictEqual(g.view('a').players[1].slots[1].note.not, []);
+  assert.throws(() => g.act('a', { type: 'note', targets: cards, add: {} }), /Pick something/);
+  g.act('a', { type: 'note', targets: cards, clear: true });
+  assert.ok(g.view('a').players[1].slots.every((c) => !c.note));
+});
+
+test('log says which cards moved, and swaps and looks send flash events', () => {
+  const g = modeGame('normal', [C('9', 'H'), C('Q', 'H'), C('2', 'H')]);
+  g.act('a', { type: 'draw_deck' }); g.act('a', { type: 'discard' });
+  g.act('a', { type: 'power_pick', targets: [{ pid: 'b', slot: 2 }] });
+  assert.deepStrictEqual(g.fx.find((e) => e.kind === 'peek').at, [{ pid: 'b', slot: 2 }]);
+  g.act('b', { type: 'draw_deck' }); g.act('b', { type: 'discard' });
+  g.act('b', { type: 'power_pick', targets: [{ pid: 'b', slot: 0 }, { pid: 'a', slot: 1 }] });
+  assert.deepStrictEqual(g.fx.find((e) => e.kind === 'swapped').at, [{ pid: 'b', slot: 0 }, { pid: 'a', slot: 1 }]);
+  assert.match(g.log.at(-1).text, /Bob swapped their own card #1 with Ann's card #2/);
+  g.act('a', { type: 'draw_deck' }); g.act('a', { type: 'swap', slot: 3 });
+  assert.match(g.log.at(-1).text, /into their card #4 and discarded the 4/);
 });
