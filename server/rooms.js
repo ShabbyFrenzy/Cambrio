@@ -146,7 +146,6 @@ function setOption(code, byPlayerId, key, value) {
   if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
   if (!OPTIONS.includes(key)) throw new RoomError('Unknown option');
   room.options = { ...room.options, [key]: !!value };
-  if (key === 'bots' && !value) room.players = room.players.filter((p) => !p.bot);
 }
 
 function setTargetScore(code, byPlayerId, value) {
@@ -166,7 +165,7 @@ function addBot(code, byPlayerId) {
   const room = getRoom(code);
   if (!room) throw new RoomError('Room not found');
   if (room.hostId !== byPlayerId) throw new RoomError('Only the host can add bots');
-  if (room.isPublic || !room.options.bots) throw new RoomError('Turn on the Bots option first');
+  if (room.isPublic) throw new RoomError('Bots can only join private rooms');
   if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
   if (room.players.length >= room.maxPlayers) throw new RoomError('This room is full');
   let n = 1;

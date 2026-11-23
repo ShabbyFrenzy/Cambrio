@@ -444,7 +444,7 @@ test('rooms: options are host-only and passed to the game', () => {
   assert.throws(() => rooms.setOption(room.code, 'h', 'silly', true));
   rooms.setOption(room.code, 'h', 'notes', true);
   rooms.setOption(room.code, 'h', 'remember', true);
-  const want = { remember: true, notes: true, counter: false, tracker: false, reactions: false, stickTime: false, replay: false, bots: false };
+  const want = { remember: true, notes: true, counter: false, tracker: false };
   assert.deepStrictEqual(rooms.view(room).options, want);
   assert.deepStrictEqual(rooms.startGame(room.code).options, want);
 });
@@ -541,7 +541,7 @@ test('bots: three bots can play a whole round on their own', () => {
   for (let seed = 1; seed <= 20; seed++) {
     let r = seed;
     const rng = () => ((r = (r * 16807) % 2147483647) / 2147483647);
-    const g = new Game([{ id: 'a', name: 'Bot 1' }, { id: 'b', name: 'Bot 2' }, { id: 'c', name: 'Bot 3' }], { rng, options: { replay: true, stickTime: true } });
+    const g = new Game([{ id: 'a', name: 'Bot 1' }, { id: 'b', name: 'Bot 2' }, { id: 'c', name: 'Bot 3' }], { rng });
     let steps = 0;
     while (g.phase !== 'ended' && steps < 3000) {
       const move = ['a', 'b', 'c'].map((id) => ({ id, a: decide(g, id) })).find((m) => m.a);
@@ -559,8 +559,6 @@ test('rooms: bots, target score and match over', () => {
   const rooms = require('../server/rooms');
   const room = rooms.createRoom();
   rooms.joinRoom(room.code, { playerId: 'h', name: 'Host' });
-  assert.throws(() => rooms.addBot(room.code, 'h'), /Bots option/);
-  rooms.setOption(room.code, 'h', 'bots', true);
   const bot = rooms.addBot(room.code, 'h');
   assert.strictEqual(bot.name, 'Bot 1');
   rooms.setTargetScore(room.code, 'h', 50);
@@ -575,8 +573,20 @@ test('rooms: bots, target score and match over', () => {
   assert.strictEqual(room.players[0].totalScore, 0);
   assert.strictEqual(rooms.view(room, 'h').matchOver, null);
   room.game.finish();
-  rooms.setOption(room.code, 'h', 'bots', false);
+  rooms.removeBot(room.code, 'h', bot.playerId);
   assert.strictEqual(room.players.length, 1);
   rooms.leaveRoom(room.code, 'h');
   assert.strictEqual(rooms.getRoom(room.code), null);
+});
+
+test('bots: the look-ahead bot only uses cards it could know about', () => {
+  const { decide } = require('../server/bots');
+  const g = new Game([{ id: 'a', name: 'Bot' }, { id: 'b', name: 'Bob' }]);
+  g.act('a', { type: 'ready' }); g.act('b', { type: 'ready' });
+  const before = JSON.stringify(g.players.map((p) => p.hand)) + JSON.stringify(g.deck);
+  const a = decide(g, 'a');
+  assert.ok(['draw_deck', 'call_cambio'].includes(a.type));
+  // Imagining futures must never change the real game.
+  assert.strictEqual(JSON.stringify(g.players.map((p) => p.hand)) + JSON.stringify(g.deck), before);
+  assert.strictEqual(g.log.length, 2);
 });

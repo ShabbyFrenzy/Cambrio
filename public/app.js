@@ -555,7 +555,7 @@
                 ${room.round > 0 ? `<span class="meta">${p.wins} win${p.wins === 1 ? '' : 's'} · ${p.totalScore} pts</span>` : ''}
               </li>`).join('')}
           </ul>
-          ${isHost && room.options && room.options.bots && !room.isPublic
+          ${isHost && !room.isPublic
             ? `<button class="secondary small add-bot" data-do="addbot" ${room.players.length >= room.maxPlayers ? 'disabled' : ''}>+ Add a bot</button>` : ''}
           <div class="option-row">
             <span class="muted">Cards each</span>
@@ -631,10 +631,6 @@
     ['notes', 'Card notes', "Mark what a card is or isn't, and who knows it."],
     ['counter', 'Card counter', "See how many of each card haven't been discarded."],
     ['tracker', 'Score tracker', 'Adds up the cards in your hand that you can see or have noted.'],
-    ['reactions', 'Emoji reactions', 'Send a quick emoji that floats up from your seat.'],
-    ['stickTime', 'Stick reaction time', 'Shows how fast each correct stick was.'],
-    ['replay', 'Round replay', 'Watch the round again, every card face up, once it ends.'],
-    ['bots', 'Bots', 'The host can add computer players to fill seats.'],
   ];
   const REACTIONS = ['😂', '😮', '😡', '👏', '😭', '🔥'];
   const opt = (g, k) => !!(g.options && g.options[k]);
@@ -967,7 +963,7 @@
           ${totals}
           ${g.phase !== 'ended' ? `<button class="ghost small" data-do="leave">${confirming('leave') ? 'Tap again to leave' : 'Leave room'}</button>` : ''}
         </aside>
-        ${opt(g, 'reactions') && myIdx !== -1 ? `<div class="react-box ${S.reactOpen ? 'open' : ''}">
+        ${myIdx !== -1 ? `<div class="react-box ${S.reactOpen ? 'open' : ''}">
           ${S.reactOpen ? `<div class="react-pick">${REACTIONS.map((e) => `<button data-do="emoji" data-emoji="${e}" aria-label="Send ${e}">${e}</button>`).join('')}</div>` : ''}
           <button class="react-btn" data-do="react" aria-label="Send a reaction" aria-expanded="${!!S.reactOpen}">😀</button>
         </div>` : ''}
@@ -1259,7 +1255,7 @@
     ['Calling Cambrio', `<p>Think you're lowest? Press <b>Call Cambrio</b> instead of drawing. Everyone else gets one last turn, then there's a last chance to stick, and all cards are shown.</p>
       <p>The caller wins ties.</p>`],
     ["You're ready!", `<p>Selecting: tap a card, or hold and drag across several. The full rules are always under <b>Rules</b> at the top.</p>
-      <p>Private rooms have extra options like notes, a score tracker, emoji reactions and bots.</p>`],
+      <p>Private rooms can add bots and turn on extra help like card notes and a score tracker. Every game has emoji reactions, stick times and a round replay.</p>`],
   ];
   function openTutorial(i = 0) {
     let dlg = document.getElementById('tutorialDialog');

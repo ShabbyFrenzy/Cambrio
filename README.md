@@ -54,11 +54,9 @@ Open two browser windows (or one normal and one private window) to play against 
   - Card notes: select cards (tap one, or hold and drag across several), press Note (or long-press a card), pick the ranks it isn't (one tap) or is (two taps) and who knows it, then Apply. With one card you edit that card's note. Only you see your notes, and they follow the card.
   - Card counter: a Cards left button under the log shows how many of each card have not been discarded yet.
   - Score tracker: a line under your hand adds up the cards you can see or have noted as one rank.
-  - Emoji reactions: a 😀 button in the corner sends an emoji that floats up from your seat.
-  - Stick reaction time: each correct stick shows how long after the card hit the pile it came.
-  - Round replay: after the round, step through every move with all cards face up.
-  - Bots: the host can add computer players in the lobby.
 - Play to a target (private rooms): off, 50 or 100 points. Once anyone reaches it, the lowest total wins the match; the next game starts a new match.
+- In every game: emoji reactions (😀 button in the corner), stick reaction times, and a round replay (step through every move with all cards face up).
+- Bots (private rooms): the host adds computer players in the lobby. `server/bots.js` plays fair (only cards it has seen plus the discard pile), counts cards, and looks ahead before big choices by playing out many imagined rounds. Its habits are tuned by self-play: `node scripts/train-bots.js` updates `server/bot-params.json`.
 - Rejoin: the main screen offers to rejoin the last room you were in (you keep your seat and cards).
 - Looks: 4 card backs and 4 table colours on the main screen, saved per device.
 - After the final turn, the sticking window lasts as long as the turn timer, or ends sooner once everyone presses "No more sticks". With no timer, it ends when everyone has pressed it.

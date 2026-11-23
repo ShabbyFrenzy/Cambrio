@@ -43,7 +43,7 @@ const MAX_PLAYERS = 8;
 //   replay:   keeps a step-by-step history of the round to watch at the end.
 //   bots:     the host can add computer players (handled by rooms and server/bots.js).
 // hard: you can write notes on cards and see which cards have not been discarded yet.
-const OPTIONS = ['remember', 'notes', 'counter', 'tracker', 'reactions', 'stickTime', 'replay', 'bots'];
+const OPTIONS = ['remember', 'notes', 'counter', 'tracker'];
 // Lowest to highest value: red K (-1), Joker (0), A ... Q, black K (13).
 const NOTE_RANKS = ['K-red', 'JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-black'];
 
@@ -182,7 +182,7 @@ class Game {
 
   // Replay: a face-up picture of the table after each logged event.
   snapshot(text) {
-    if (!this.options || !this.options.replay || !this.players) return;
+    if (!this.history || !this.players || this.history.length >= 600) return;
     const plain = (c) => (c ? { rank: c.rank, suit: c.suit } : null);
     this.history.push({
       text,
@@ -456,11 +456,11 @@ class Game {
     if (!top) throw new GameError('There is nothing to stick on');
     const whose = owner.id === pid ? 'their' : `${owner.name}'s`;
     if (card.rank === top.rank) {
-      const ms = this.options.stickTime ? Math.max(0, this.now() - this.topSince) : null;
+      const ms = Math.max(0, this.now() - this.topSince); // stick reaction time, shown to everyone
       owner.hand[t.slot] = null;
       this.discardCard(card);
       this.fx.push({ kind: 'stick', by: pid, at: { pid: t.pid, slot: t.slot }, card, ok: true, ms });
-      this.addLog(`${p.name} stuck ${whose} card #${t.slot + 1} (${cardLabel(card)}) on the pile!${ms !== null ? ` (${(ms / 1000).toFixed(2)}s)` : ''}`);
+      this.addLog(`${p.name} stuck ${whose} card #${t.slot + 1} (${cardLabel(card)}) on the pile! (${(ms / 1000).toFixed(2)}s)`);
       if (owner.id !== pid && p.hand.some(Boolean)) {
         this.pendingGive[pid] = { to: owner.id, slot: t.slot };
         if (this.pauseStart === null) this.pauseStart = this.now();
@@ -831,7 +831,7 @@ class Game {
       paused: this.pauseStart !== null,
       doneSticking: [...this.doneSticking],
       results: this.results,
-      replay: ended && this.options.replay ? this.history : null,
+      replay: ended ? this.history : null,
       log: this.log.slice(-40),
       youAreIn: !!me,
     };
