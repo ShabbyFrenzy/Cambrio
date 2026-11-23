@@ -33,9 +33,12 @@ const TURN_TIMER_CHOICES = [0, 10, 15, 20, 30, 60]; // seconds; 0 = no timer
 const PEEK_MS = 10000; // time to memorise your bottom row at the start (guess)
 const GIVE_TIMEOUT_MS = 20000; // the server gives a random card if a sticker takes longer
 const MAX_PLAYERS = 8;
-// Private rooms can pick a mode. easy: cards you have seen stay face up for you.
+// Private rooms can switch on extra options (all off in quick play):
+//   remember: cards you have seen stay face up for you.
+//   notes:    you can mark cards with what they are/aren't and who knows them.
+//   counter:  shows how many of each card have not been discarded yet.
 // hard: you can write notes on cards and see which cards have not been discarded yet.
-const MODES = ['easy', 'normal', 'hard'];
+const OPTIONS = ['remember', 'notes', 'counter'];
 const NOTE_RANKS = ['JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-red', 'K-black'];
 
 function isRed(card) {
@@ -112,7 +115,7 @@ class Game {
     this.pauseStart = null; // set while everyone waits for a sticker to give a card
     this.doneSticking = new Set(); // no-timer games: who pressed "No more sticks"
     this.peekDeadline = this.now() + PEEK_MS; // null while a quick play game waits for players to arrive
-    this.mode = MODES.includes(opts.mode) ? opts.mode : 'normal';
+    this.options = Object.fromEntries(OPTIONS.map((k) => [k, !!(opts.options && opts.options[k])]));
     this.known = new Map(); // playerId -> Set of card objects that player has seen (easy mode)
     this.notes = new Map(); // playerId -> Map card object -> {is:[], not:[]} (hard mode)
     this.deck = opts.deck ? opts.deck.slice() : shuffle(buildDeck(), this.rng);
@@ -455,8 +458,9 @@ class Game {
   // Hard mode notes. Pick the info first, then the cards it applies to:
   //   { targets:[{pid,slot}...], add:{ is:[ranks], not:[ranks], knows:[playerIds] } } adds to each card's note,
   //   { targets, clear:true } wipes those cards' notes. Notes are private and follow the card.
-  setNote(pid, { targets, target, add, note, clear }) {
-    if (this.mode !== 'hard') throw new GameError('Notes are only in hard mode');
+  //   { targets:[one card], add, replace:true } sets that card's note to exactly this (editing one card).
+  setNote(pid, { targets, target, add, note, clear, replace }) {
+    if (!this.options.notes) throw new GameError('Notes are turned off in this game');
     if (this.phase === 'ended') throw new GameError('The game is over');
     if (!this.known.has(pid)) throw new GameError('You are not in this game');
     const list = Array.isArray(targets) ? targets : target ? [target] : [];
@@ -470,6 +474,12 @@ class Game {
     const is = ranks(a.is);
     const not = ranks(a.not).filter((r) => !is.includes(r));
     const knows = ids(a.knows);
+    if (replace) {
+      if (cards.length !== 1) throw new GameError('Edit one card at a time');
+      if (is.length || not.length || knows.length) notes.set(cards[0], { is, not, knows });
+      else notes.delete(cards[0]);
+      return {};
+    }
     if (!is.length && !not.length && !knows.length) throw new GameError('Pick something to note first');
     for (const c of cards) {
       const old = notes.get(c) || { is: [], not: [], knows: [] };
@@ -747,10 +757,10 @@ class Game {
     const cur = this.phase === 'play' && this.stage !== 'closing' ? this.current() : null;
     const me = this.players.find((p) => p.id === pid);
     const knownByMe = this.known.get(pid);
-    const notesByMe = this.mode === 'hard' ? this.notes.get(pid) : null;
+    const notesByMe = this.options.notes ? this.notes.get(pid) : null;
     return {
-      mode: this.mode,
-      unplayed: this.mode === 'hard' && !ended ? this.unplayedCounts() : null,
+      options: this.options,
+      unplayed: (this.options.counter || this.options.notes) && !ended ? this.unplayedCounts() : null,
       seq: this.seq,
       handSize: this.handSize,
       peekCount: this.peekSlots.length,
@@ -766,7 +776,7 @@ class Game {
           if (!c) return null;
           if (ended) return c;
           if (this.phase === 'peek' && p.id === pid && this.peekSlots.includes(i)) return c;
-          if (this.mode === 'easy' && this.phase === 'play' && knownByMe && knownByMe.has(c)) return { ...c, known: true };
+          if (this.options.remember && this.phase === 'play' && knownByMe && knownByMe.has(c)) return { ...c, known: true };
           const note = notesByMe && notesByMe.get(c);
           return note ? { hidden: true, note } : { hidden: true };
         }),
@@ -805,5 +815,5 @@ class Game {
 
 module.exports = {
   Game, GameError, buildDeck, cardValue, cardPower, cardLabel,
-  TURN_TIMER_CHOICES, GIVE_TIMEOUT_MS, PEEK_MS, MODES, NOTE_RANKS, HAND_SIZE, HAND_SIZES, MIN_PLAYERS, MAX_PLAYERS, MAX_PLAYERS_BY_HAND, INITIAL_PEEK_SLOTS, PEEK_SLOTS,
+  TURN_TIMER_CHOICES, GIVE_TIMEOUT_MS, PEEK_MS, OPTIONS, NOTE_RANKS, HAND_SIZE, HAND_SIZES, MIN_PLAYERS, MAX_PLAYERS, MAX_PLAYERS_BY_HAND, INITIAL_PEEK_SLOTS, PEEK_SLOTS,
 };

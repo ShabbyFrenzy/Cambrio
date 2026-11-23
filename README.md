@@ -48,10 +48,10 @@ Open two browser windows (or one normal and one private window) to play against 
   - The whole table pauses until that card is given (a random card is given after 20 seconds).
   - To stick: select a card, then press Stick in the action panel.
 - Turn timer: the host can set one (off, 10, 15, 20, 30 or 60 seconds). Quick play always uses 30 seconds. The timer restarts after every action you take on your turn (drawing, discarding, looking).
-- Modes (private rooms only, quick play is always Normal):
-  - Easy: once you have seen a card, it stays face up for you wherever it moves.
-  - Normal: remember your cards yourself.
-  - Hard: press "Make a note", pick ranks it is or isn't and who knows it, tap every card it applies to, then Apply (only you see your notes; they follow the card), and a Cards left button under the log shows how many of each card have not been discarded yet.
+- Extra help (private rooms only, each one on or off; quick play has none):
+  - Photographic memory: once you have seen a card, it stays face up for you wherever it moves.
+  - Card notes: select cards (tap one, or hold and drag across several), press Note, pick the ranks it is or isn't and who knows it, then Apply. With one card you edit that card's note. Only you see your notes, and they follow the card.
+  - Card counter: a Cards left button under the log shows how many of each card have not been discarded yet.
 - After the final turn, the sticking window lasts as long as the turn timer. With no timer, the cards are revealed once everyone presses "No more sticks".
 - The Cambrio caller wins ties. Any other tie goes to the player with the lowest single card (a player with no cards left counts as lowest). If that also ties, they share the win.
 

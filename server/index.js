@@ -196,9 +196,9 @@ io.on('connection', (socket) => {
     broadcast(room);
   }));
 
-  socket.on('set_mode', safe(socket, ({ value }) => {
+  socket.on('set_option', safe(socket, ({ key, value }) => {
     const room = currentRoom(socket);
-    rooms.setMode(room.code, socket.data.playerId, value);
+    rooms.setOption(room.code, socket.data.playerId, key, value);
     broadcast(room);
   }));
 

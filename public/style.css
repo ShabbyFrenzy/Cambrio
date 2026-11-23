@@ -290,3 +290,23 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
   display: grid; place-items: center; font-size: 12px; background: #fff; color: #222; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
 .card.flash-swap .flash-badge { background: #ff9f43; color: #fff; font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .card.flash-look, .card.flash-swap { animation: none; box-shadow: 0 0 0 3px #7cc4ff; } .card.flash-swap { box-shadow: 0 0 0 3px #ff9f43; } }
+
+/* Game options in the lobby */
+.game-options { display: grid; gap: 6px; justify-items: start; max-width: 360px; margin: 0 auto; width: 100%; }
+.toggle { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; text-align: left; }
+.toggle input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--gold); }
+.toggle small { display: block; color: var(--muted); font-size: 12px; }
+
+/* The note maker floats over the middle of the table so cards and buttons stay put */
+.mid { position: relative; display: grid; gap: 14px; }
+.note-maker { position: absolute; inset: 0; z-index: 20; overflow-y: auto; display: grid; gap: 6px; align-content: start; justify-items: center;
+  background: rgba(10, 40, 28, .97); border: 1px solid rgba(255,255,255,.15); border-radius: 14px; padding: 10px; text-align: center; font-size: 14px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.note-maker .note-title { color: var(--gold); }
+.note-maker b.is { color: #4cd187; } .note-maker b.not { color: #ff8a7a; }
+.action-panel .note-btn { color: #7cc4ff; }
+/* Dragging across cards to select them shouldn't scroll the page or pick text */
+.table .card.clickable { touch-action: none; -webkit-user-select: none; }
+.game-options label.toggle { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; margin: 0; }
+.game-options label.toggle input { flex: none; }
+.game-options label.toggle span { display: block; }
