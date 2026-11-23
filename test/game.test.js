@@ -444,7 +444,7 @@ test('rooms: options are host-only and passed to the game', () => {
   assert.throws(() => rooms.setOption(room.code, 'h', 'silly', true));
   rooms.setOption(room.code, 'h', 'notes', true);
   rooms.setOption(room.code, 'h', 'remember', true);
-  const want = { remember: true, notes: true, counter: false, tracker: false };
+  const want = { remember: true, notes: true, counter: false };
   assert.deepStrictEqual(rooms.view(room).options, want);
   assert.deepStrictEqual(rooms.startGame(room.code).options, want);
 });
@@ -589,4 +589,18 @@ test('bots: the look-ahead bot only uses cards it could know about', () => {
   // Imagining futures must never change the real game.
   assert.strictEqual(JSON.stringify(g.players.map((p) => p.hand)) + JSON.stringify(g.deck), before);
   assert.strictEqual(g.log.length, 2);
+});
+
+test('no cards left: Cambrio is called automatically on your turn', () => {
+  const g = twoPlayer([C('9', 'H'), C('2', 'H')]);
+  // Ann sticks away all four of her cards (rigging the pile to match each one).
+  for (let s = 0; s < 4; s++) {
+    g.discard.push({ ...g.players[0].hand[s], id: `copy${s}` });
+    g.act('a', { type: 'stick', slot: s });
+  }
+  assert.ok(g.players[0].hand.every((c) => !c));
+  // It is still Ann's turn to draw, so Cambrio is called for her straight away.
+  assert.strictEqual(g.cambioBy, 'a');
+  assert.ok(g.log.some((l) => /no cards left/.test(l.text)));
+  assert.strictEqual(g.current().id, 'b');
 });

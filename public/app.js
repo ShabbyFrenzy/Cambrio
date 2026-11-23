@@ -630,7 +630,6 @@
     ['remember', 'Photographic memory', 'Cards you have seen stay face up for you.'],
     ['notes', 'Card notes', "Mark what a card is or isn't, and who knows it."],
     ['counter', 'Card counter', "See how many of each card haven't been discarded."],
-    ['tracker', 'Score tracker', 'Adds up the cards in your hand that you can see or have noted.'],
   ];
   const REACTIONS = ['😂', '😮', '😡', '👏', '😭', '🔥'];
   const opt = (g, k) => !!(g.options && g.options[k]);
@@ -747,30 +746,7 @@
         <div class="seat-head"><span class="dot ${p.connected ? '' : 'off'}"></span>${esc(isMe ? `${p.name} (you)` : p.name)}${p.connected ? '' : ' <span class="muted">· away</span>'} ${tags.join('')}${timerOn ? `<span class="turn-secs">${Math.ceil(turnLeft() / 1000)}s</span>` : ''}</div>
         <div class="hand ${cols}">${cards}</div>
         <div class="turn-bar ${timerOn ? '' : 'off'}"><div class="turn-fill" style="width:${timerOn ? turnPct() : 0}%"></div></div>
-        ${isMe && g.phase !== 'ended' && opt(g, 'tracker') ? trackerHtml(g, p) : ''}
       </div>`;
-  }
-
-  // Score tracker: adds up the cards in your hand that you can see or have noted
-  // with a single "is", so you can judge when to call Cambrio.
-  const RANK_VALUE = { 'K-red': -1, JOKER: 0, A: 1, J: 11, Q: 12, 'K-black': 13 };
-  function valueOfCard(c) {
-    if (c.rank === 'K') return c.suit === 'H' || c.suit === 'D' ? -1 : 13;
-    return c.rank in RANK_VALUE ? RANK_VALUE[c.rank] : Number(c.rank);
-  }
-  function trackerHtml(g, p) {
-    const parts = p.slots.filter(Boolean).map((c) => {
-      if (!c.hidden) return { v: valueOfCard(c) };
-      if (c.note && c.note.is && c.note.is.length === 1) return { v: RANK_VALUE[c.note.is[0]] ?? Number(c.note.is[0]), noted: true };
-      return null;
-    });
-    const known = parts.filter(Boolean);
-    const unknown = parts.length - known.length;
-    const sum = known.reduce((t, x) => t + x.v, 0);
-    const terms = parts.map((x) => (x ? `<b class="${x.noted ? 'noted' : ''}">${x.v}</b>` : '<span class="q">?</span>')).join(' + ');
-    const tail = unknown === parts.length ? 'nothing known yet'
-      : `= <b>${sum}</b>${unknown ? ` + ${unknown} unknown` : ''}`;
-    return `<div class="tracker" aria-label="Your known total">Your cards: ${terms} ${tail}</div>`;
   }
 
   function promptHtml(g, me) {
@@ -1255,7 +1231,7 @@
     ['Calling Cambrio', `<p>Think you're lowest? Press <b>Call Cambrio</b> instead of drawing. Everyone else gets one last turn, then there's a last chance to stick, and all cards are shown.</p>
       <p>The caller wins ties.</p>`],
     ["You're ready!", `<p>Selecting: tap a card, or hold and drag across several. The full rules are always under <b>Rules</b> at the top.</p>
-      <p>Private rooms can add bots and turn on extra help like card notes and a score tracker. Every game has emoji reactions, stick times and a round replay.</p>`],
+      <p>Private rooms can add bots and turn on extra help like card notes. Every game has emoji reactions, stick times and a round replay.</p>`],
   ];
   function openTutorial(i = 0) {
     let dlg = document.getElementById('tutorialDialog');

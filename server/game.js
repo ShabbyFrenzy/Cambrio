@@ -37,13 +37,8 @@ const MAX_PLAYERS = 8;
 //   remember: cards you have seen stay face up for you.
 //   notes:    you can mark cards with what they are/aren't and who knows them.
 //   counter:  shows how many of each card have not been discarded yet.
-//   tracker:  adds up the cards in your hand that you can see or have noted (shown by the client).
-//   reactions: emoji reactions (handled by the server sockets).
-//   stickTime: shows how fast a right stick was.
-//   replay:   keeps a step-by-step history of the round to watch at the end.
-//   bots:     the host can add computer players (handled by rooms and server/bots.js).
-// hard: you can write notes on cards and see which cards have not been discarded yet.
-const OPTIONS = ['remember', 'notes', 'counter', 'tracker'];
+// Always on: emoji reactions, stick times, the round replay, and bots in private rooms.
+const OPTIONS = ['remember', 'notes', 'counter'];
 // Lowest to highest value: red K (-1), Joker (0), A ... Q, black K (13).
 const NOTE_RANKS = ['K-red', 'JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-black'];
 
@@ -267,6 +262,7 @@ class Game {
     }
     this.fx = [];
     const out = handler.call(this, pid, action) || {};
+    this.autoCambio(); // e.g. someone stuck their last card on their own turn
     this.seq++;
     if (this.fx.length) this.fxSeq++;
     return { reveals: out.reveals || [] };
@@ -536,6 +532,7 @@ class Game {
     this.addLog(`${p.name} gave their card #${slot + 1} to ${to.name}, as ${to.name}'s card #${toSlot + 1}.`);
     if (!Object.keys(this.pendingGive).length) this.endPause();
     if (this.stage === 'closing') this.tryFinish();
+    this.autoCambio();
     return {};
   }
 
@@ -552,6 +549,17 @@ class Game {
     this.turn = (this.turn + 1) % this.players.length;
     this.skipDisconnected();
     if (this.phase === 'play' && this.stage !== 'closing') this.startTurnClock();
+    this.autoCambio();
+  }
+
+  /** A player with no cards left calls Cambrio automatically when it's their turn to draw. */
+  autoCambio() {
+    if (this.phase !== 'play' || this.stage !== 'draw' || this.cambioBy) return;
+    if (Object.keys(this.pendingGive).length) return; // wait until any owed card is given
+    const p = this.current();
+    if (!p || p.hand.some(Boolean)) return;
+    this.addLog(`${p.name} has no cards left, so Cambrio is called for them.`);
+    this.callCambio(p.id);
   }
 
   startTurnClock() {

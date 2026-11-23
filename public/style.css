@@ -326,12 +326,8 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 .game-options label.toggle input { flex: none; }
 .game-options label.toggle span { display: block; }
 
-/* Score tracker under your hand; the timer bar keeps its space so nothing jumps */
+/* The timer bar keeps its space so nothing jumps */
 .turn-bar.off { visibility: hidden; }
-.tracker { margin-top: 6px; font-size: 13px; color: var(--muted); text-align: center; }
-.tracker b { color: var(--ink); }
-.tracker b.noted { color: #4cd187; }
-.tracker .q { color: rgba(255,255,255,.45); }
 
 /* King suit symbols in notes, chips and the counter */
 .ks { font-size: 1.3em; line-height: 0; vertical-align: -0.08em; margin-left: 1px; }

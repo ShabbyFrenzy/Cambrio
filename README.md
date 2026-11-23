@@ -53,7 +53,6 @@ Open two browser windows (or one normal and one private window) to play against 
   - Photographic memory: once you have seen a card, it stays face up for you wherever it moves.
   - Card notes: select cards (tap one, or hold and drag across several), press Note (or long-press a card), pick the ranks it isn't (one tap) or is (two taps) and who knows it, then Apply. With one card you edit that card's note. Only you see your notes, and they follow the card.
   - Card counter: a Cards left button under the log shows how many of each card have not been discarded yet.
-  - Score tracker: a line under your hand adds up the cards you can see or have noted as one rank.
 - Play to a target (private rooms): off, 50 or 100 points. Once anyone reaches it, the lowest total wins the match; the next game starts a new match.
 - In every game: emoji reactions (😀 button in the corner), stick reaction times, and a round replay (step through every move with all cards face up).
 - Bots (private rooms): the host adds computer players in the lobby. `server/bots.js` plays fair (only cards it has seen plus the discard pile), counts cards, and looks ahead before big choices by playing out many imagined rounds. Its habits are tuned by self-play: `node scripts/train-bots.js` updates `server/bot-params.json`.
@@ -65,7 +64,7 @@ Open two browser windows (or one normal and one private window) to play against 
 ## Other guesses (easy to change)
 
 1. The host picks 4 or 6 cards each and the max players (2 to 8) in the lobby (6 cards allows up to 6 players). At the start you see your bottom row (2 cards, or 3 with 6 cards) until you press "I've got them" or 10 seconds pass (in quick play, the 10 seconds start once everyone has arrived).
-2. Calling Cambrio uses your turn and everyone else gets one more turn. The caller's cards are not locked: powers and sticks still work on them.
+2. Calling Cambrio uses your turn and everyone else gets one more turn. The caller's cards are not locked: powers and sticks still work on them. A player with no cards left when their turn comes to draw calls Cambrio automatically (if nobody has yet).
 3. When the turn timer runs out, the turn is skipped (a drawn card is discarded without using its power). Timers freeze while the table waits for a card to be given. With no timer, a player who is away on their turn is skipped after 45 seconds.
 5. Quick play starts a game of 4 right away, or of 2 or 3 once nobody new has joined for 10 seconds.
 4. 2 to 8 players. The first player rotates each round, and the lobby keeps running totals.
