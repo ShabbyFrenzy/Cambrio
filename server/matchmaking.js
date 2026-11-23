@@ -5,8 +5,7 @@
 //
 // GUESSES (marked so they are easy to change once we see real traffic):
 //   - IDEAL_SIZE 4: Cambrio plays best with about 4. Start a game the moment 4 are waiting.
-//   - After 20s waiting, the oldest player will accept a 3-player game.
-//   - After 45s waiting, the oldest player will accept a 2-player game.
+//   - If nobody new joins for 10s, start with whoever is waiting (2 or 3 players). (Briley's rule)
 //   - MAX_WAIT 120s: after that the player is told nobody is around and is taken out of the queue
 //     (the page offers "keep waiting" or "make a private room instead").
 // The oldest waiting player sets the rules for the group, so nobody waits forever behind newcomers.
@@ -14,9 +13,8 @@
 const DEFAULTS = {
   idealSize: 4,          // GUESS
   minSize: 2,
-  relaxSteps: [          // GUESS: [seconds waited by oldest player, smallest game accepted]
-    [20, 3],
-    [45, 2],
+  relaxSteps: [          // [seconds since the last player joined, smallest game accepted]
+    [10, 2],
   ],
   maxWaitSec: 120,       // GUESS
   tickMs: 1000,
@@ -31,6 +29,7 @@ class Matchmaker {
     this.onTimeout = onTimeout;
     this.now = now;
     this.queue = []; // [{ id, name, joinedAt }], oldest first
+    this.lastJoinAt = 0;
     this.timer = null;
   }
 
@@ -52,6 +51,7 @@ class Matchmaker {
     if (!id) throw new Error('player id is required');
     if (this.isQueued(id)) return false; // double click or second tab
     this.queue.push({ id, name: String(name || 'Player').slice(0, 20), joinedAt: this.now() });
+    this.lastJoinAt = this.now();
     this.tick();
     return true;
   }
@@ -63,10 +63,10 @@ class Matchmaker {
     return this.queue.length !== before;
   }
 
-  // Smallest game the oldest waiting player will accept right now.
+  // Smallest game that may start right now: 4 at once, or fewer once nobody new has joined for a while.
   acceptableSize() {
     if (!this.queue.length) return this.cfg.idealSize;
-    const waited = (this.now() - this.queue[0].joinedAt) / 1000;
+    const waited = (this.now() - this.lastJoinAt) / 1000;
     let size = this.cfg.idealSize;
     for (const [afterSec, s] of this.cfg.relaxSteps) if (waited >= afterSec) size = Math.min(size, s);
     return Math.max(size, this.cfg.minSize);

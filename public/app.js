@@ -30,8 +30,11 @@
     lastFxSeq: null,     // last animation batch we played
     fxRound: null,
     endShownRound: null, // flip everyone's cards once when a round ends
-    lastTap: null,       // {key, time} for double-tap to stick
-    tapTimer: null,
+    confirm: null,       // {kind:'cambio'|'leave', until} for in-game "are you sure?"
+    closingDeadline: null, // local time when the end-of-round sticking window closes
+    turnDeadline: null,  // local time when the current turn runs out
+    turnFrozen: null,    // ms left while the game is paused
+    turnKey: '',
     lastDiscardId: null, // animate the discard pile only when it changes
     lastDrawnKey: null,
   };
@@ -278,7 +281,6 @@
     if (o.locked) cls.push('locked');
     if (o.pop) cls.push('pop');
     if (o.flip) cls.push('flip-in');
-    if (o.stickable) cls.push('stickable');
     if (o.key && S.inFlight.has(o.key)) cls.push('in-flight');
     if (o.key) o.data = { ...(o.data || {}), key: o.key };
     const data = o.data ? Object.entries(o.data).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('') : '';
@@ -381,6 +383,15 @@
               : `<b>${room.maxPlayers}</b>`}
             <span class="muted">· ${room.players.length} in room</span>
           </div>
+          <div class="option-row">
+            <label class="muted" for="turnTimer">Turn timer</label>
+            ${isHost
+              ? `<select id="turnTimer" data-do="turntimer">${room.turnChoices.map((n) => `<option value="${n}" ${n === room.turnSeconds ? 'selected' : ''}>${n ? `${n} seconds` : 'Off'}</option>`).join('')}</select>`
+              : `<b>${room.turnSeconds ? `${room.turnSeconds} seconds` : 'Off'}</b>`}
+          </div>
+          <p class="center muted small-note">${room.turnSeconds
+            ? `Each turn has ${room.turnSeconds} seconds. After the last turn there are ${room.turnSeconds} seconds to stick.`
+            : 'No turn timer. After the last turn, the round ends when everyone presses "No more sticks".'}</p>
           ${isHost
             ? `<button class="primary" data-do="start" ${online < 2 ? 'disabled' : ''}>${online < 2 ? 'Waiting for at least 2 players…' : `Start game with ${online} players`}</button>`
             : `<p class="center muted">Waiting for the host to start the game…</p>`}
@@ -399,6 +410,8 @@
     app.querySelector('[data-do="leave"]').onclick = leaveRoom;
     const maxSel = app.querySelector('[data-do="maxplayers"]');
     if (maxSel) maxSel.onchange = () => call('set_max_players', { value: Number(maxSel.value) });
+    const timerSel = app.querySelector('[data-do="turntimer"]');
+    if (timerSel) timerSel.onchange = () => call('set_turn_timer', { value: Number(timerSel.value) });
     app.querySelectorAll('[data-do="handsize"]').forEach((b) => {
       b.onclick = () => call('set_hand_size', { size: Number(b.dataset.size) });
     });
@@ -410,31 +423,80 @@
   }
 
   // ---------- game ----------
-  function selectionKey(g) {
-    return [g.phase, g.current, g.stage, g.power && g.power.step].join('|');
+  // Interaction model: tap cards to select them (highlighted), then press a
+  // button in the action panel. Buttons are always shown and greyed out when
+  // they can't be used.
+
+  function nameIn(g, id) {
+    const p = g.players.find((x) => x.id === id);
+    return p ? esc(p.name) : '?';
   }
 
-  function targetMode(g, me) {
-    // What can I click right now, and what happens?
-    if (g.phase === 'peek') return { kind: 'none' };
-    if (g.phase !== 'play') return { kind: 'none' };
-    if (g.pendingGive) return { kind: 'give' };
-    if (g.current !== me) return { kind: 'none' };
-    if (g.stage === 'draw') return { kind: 'draw' };
-    if (g.stage === 'hold') return { kind: 'swapDrawn' };
-    if (g.stage === 'power') {
-      const p = g.power;
-      if (p.type === 'peekOwn') return { kind: 'power', need: 1, filter: (pid) => pid === me };
-      if (p.type === 'peekOther') return { kind: 'power', need: 1, filter: (pid) => pid !== me };
-      return { kind: 'power', need: 2, filter: () => true };
+  function cardAtView(g, t) {
+    const p = g.players.find((x) => x.id === t.pid);
+    return p ? p.slots[t.slot] : null;
+  }
+
+  /** What each action button does right now. */
+  function actionState(g, me) {
+    const amPlayer = g.players.some((p) => p.id === me);
+    const playing = g.phase === 'play' && amPlayer;
+    const owing = (g.owing || []);
+    const paused = owing.length > 0;
+    const myTurn = playing && g.current === me && !paused;
+    const sel = S.selected;
+    const oneOwn = sel.length === 1 && sel[0].pid === me;
+    const pw = g.power;
+    let power = { label: 'Use power', enabled: false };
+    if (myTurn && g.stage === 'power' && pw) {
+      if (pw.type === 'peekOwn') power = { label: 'Look', enabled: oneOwn };
+      else if (pw.type === 'peekOther') power = { label: 'Look', enabled: sel.length === 1 && sel[0].pid !== me };
+      else if (pw.type === 'lookSwap' && pw.step === 'look') power = { label: 'Look', enabled: sel.length === 2 };
+      else power = { label: 'Swap cards', enabled: sel.length === 2 };
     }
-    return { kind: 'none' };
+    return {
+      draw: myTurn && g.stage === 'draw',
+      swap: myTurn && g.stage === 'hold' && oneOwn,
+      discard: myTurn && g.stage === 'hold',
+      power,
+      skip: { enabled: myTurn && g.stage === 'power', label: pw && pw.step === 'swap' ? "Don't swap" : 'Skip' },
+      give: playing && !!g.pendingGive && oneOwn,
+      stick: playing && !paused && !!g.discardTop && sel.length === 1 && !!cardAtView(g, sel[0]),
+      cambio: myTurn && g.stage === 'draw' && !g.cambioBy,
+      // At the very end with no timer, the Cambrio button becomes "No more sticks".
+      done: playing && !paused && g.stage === 'closing' && g.closingMsLeft === null && !(g.doneSticking || []).includes(me),
+    };
   }
 
-  function seatHtml(g, p, me, mode, isMe) {
+  function confirming(kind) {
+    return S.confirm && S.confirm.kind === kind && S.confirm.until > Date.now();
+  }
+
+  function panelHtml(g, me) {
+    const a = actionState(g, me);
+    const btn = (doName, label, enabled, cls = 'secondary', extra = '') =>
+      `<button class="${cls} act" data-do="${doName}" ${enabled ? '' : 'disabled'} ${extra}>${label}</button>`;
+    const sure = confirming('cambio');
+    return `
+      <div class="action-panel" role="group" aria-label="Actions">
+        ${btn('draw', 'Draw', a.draw)}
+        ${btn('swap', 'Swap', a.swap)}
+        ${btn('discard', g.stage === 'hold' && g.current === me && powerOf(g.drawn) ? 'Discard + power' : 'Discard', a.discard)}
+        ${btn('power', a.power.label, a.power.enabled)}
+        ${btn('skip', a.skip.label, a.skip.enabled)}
+        ${btn('give', 'Give', a.give, a.give ? 'primary' : 'secondary')}
+        ${btn('stick', 'Stick', a.stick, 'primary wide')}
+        ${g.stage === 'closing' && g.closingMsLeft === null
+          ? btn('done', (g.doneSticking || []).includes(me) ? 'Waiting for others…' : 'No more sticks', a.done, 'primary wide')
+          : btn('cambio', sure ? 'Sure? Tap again' : 'Call Cambrio', a.cambio, `danger wide ${sure ? 'pulse' : ''}`)}
+      </div>`;
+  }
+
+  function seatHtml(g, p, me, isMe) {
     const now = Date.now();
     const revealedFromPower = (g.power && g.power.revealed) || [];
     const cols = p.slots.length > 4 ? 'wide' : '';
+    const selectable = g.phase === 'play' && g.players.some((x) => x.id === me);
     const cards = p.slots.map((c, slot) => {
       let card = c;
       let revealed = false;
@@ -444,34 +506,26 @@
       const pr = revealedFromPower.find((x) => x.pid === p.id && x.slot === slot);
       if (pr && c) { card = pr.card; revealed = true; }
       if (g.phase === 'peek' && isMe && c && !c.hidden) revealed = true;
-      let clickable = false;
-      if (c) {
-        if (mode.kind === 'give' || mode.kind === 'swapDrawn') clickable = isMe;
-        if (mode.kind === 'power') clickable = mode.filter(p.id);
-      }
       const selected = S.selected.some((t) => t.pid === p.id && t.slot === slot);
-      const stickable = canStick(g, me, p.id, c);
       if (g.phase === 'ended' && S.endShownRound !== S.room.round) flip = true;
-      return `<div class="slot">${cardHtml(card, { clickable, selected, revealed, stickable, flip, key: `s:${p.id}:${slot}`, data: { pid: p.id, slot } })}<div class="card-tag">#${slot + 1}</div></div>`;
+      return `<div class="slot">${cardHtml(card, { clickable: selectable && !!c, selected, revealed, flip, key: `s:${p.id}:${slot}`, data: { pid: p.id, slot } })}<div class="card-tag">#${slot + 1}</div></div>`;
     }).join('');
+    const timerOn = g.current === p.id && g.turnMsLeft !== null && g.turnMsLeft !== undefined;
     const tags = [];
     if (g.cambioBy === p.id) tags.push('<span class="tag">CAMBRIO</span>');
     if (g.phase === 'peek' && p.ready) tags.push('<span class="tag" style="background:#4cd187">READY</span>');
     return `
       <div class="seat ${isMe ? 'me' : ''} ${g.current === p.id ? 'turn' : ''} ${p.connected ? '' : 'away'}">
-        <div class="seat-head"><span class="dot ${p.connected ? '' : 'off'}"></span>${esc(isMe ? `${p.name} (you)` : p.name)}${p.connected ? '' : ' <span class="muted">· away</span>'} ${tags.join('')}</div>
+        <div class="seat-head"><span class="dot ${p.connected ? '' : 'off'}"></span>${esc(isMe ? `${p.name} (you)` : p.name)}${p.connected ? '' : ' <span class="muted">· away</span>'} ${tags.join('')}${timerOn ? `<span class="turn-secs">${Math.ceil(turnLeft() / 1000)}s</span>` : ''}</div>
         <div class="hand ${cols}">${cards}</div>
+        ${timerOn ? `<div class="turn-bar"><div class="turn-fill" style="width:${turnPct()}%"></div></div>` : ''}
       </div>`;
   }
 
-  function canStick(g, me, pid, card) {
-    return !!(card && g.phase === 'play' && g.discardTop && !g.pendingGive
-      && g.players.some((p) => p.id === me));
-  }
-
-  function promptHtml(g, me, room) {
-    const nameOf = (id) => { const p = g.players.find((x) => x.id === id); return p ? esc(p.name) : '?'; };
+  function promptHtml(g, me) {
+    const nameOf = (id) => nameIn(g, id);
     const myTurn = g.current === me;
+    const n = S.selected.length;
 
     if (g.phase === 'peek') {
       const meP = g.players.find((p) => p.id === me);
@@ -483,44 +537,62 @@
     if (g.phase === 'ended') return '';
 
     if (g.pendingGive) {
-      return `<div class="msg">Nice stick! Now tap one of your cards to give to <b>${nameOf(g.pendingGive.to)}</b>.</div>`;
+      return `<div class="msg"><b>Nice stick!</b> Everyone waits while you pick one of your cards, then press <b>Give</b> to hand it to <b>${nameOf(g.pendingGive.to)}</b>.</div>`;
     }
-
-    const last = g.turnsLeft !== null && g.cambioBy ? ` <span class="muted">(final round)</span>` : '';
+    if (g.owing && g.owing.length) {
+      return `<div class="msg">Paused: waiting for <b>${nameOf(g.owing[0])}</b> to give a card…</div>`;
+    }
+    if (g.stage === 'closing') {
+      if (g.closingMsLeft === null) {
+        const done = (g.doneSticking || []).length;
+        const total = g.players.filter((p) => p.connected).length;
+        return `<div class="msg"><b>Last chance to stick!</b> Press <b>No more sticks</b> when you're done. Cards are revealed when everyone has (${done} of ${total}).</div>`;
+      }
+      return `<div class="msg"><b>Last chance to stick!</b> Cards are revealed in <b class="countdown">${Math.ceil(closingLeft() / 1000)}</b>…</div>`;
+    }
+    const stickTip = '<br><span class="muted">Spot a match on the pile? Select that card and press Stick.</span>';
+    const last = g.cambioBy ? ' <span class="muted">(final round)</span>' : '';
     if (!myTurn) {
       let what = `Waiting for <b>${nameOf(g.current)}</b>`;
       if (g.stage === 'hold') what = `<b>${nameOf(g.current)}</b> is deciding what to do with their card`;
       if (g.stage === 'power') what = `<b>${nameOf(g.current)}</b> is using a power: ${POWER_TEXT[g.power.type].toLowerCase()}`;
-      return `<div class="msg">${what}…${last}</div>`;
+      return `<div class="msg">${what}…${last}${stickTip}</div>`;
     }
     if (g.stage === 'draw') {
-      return `<div class="msg"><b>Your turn.</b> Tap the deck to draw a card.${last}</div>
-        <div class="actions">
-          ${g.cambioBy ? '' : '<button class="danger" data-do="cambio">Call Cambrio</button>'}
-        </div>`;
+      return `<div class="msg"><b>Your turn.</b> Press Draw (or tap the deck), or call Cambrio.${last}</div>`;
     }
     if (g.stage === 'hold') {
       const p = powerOf(g.drawn);
-      return `<div class="msg">Tap one of your cards to swap it, or discard the card.${p ? `<br><span class="muted">Discarding it lets you: ${POWER_TEXT[p].toLowerCase()}.</span>` : ''}</div>
-        <div class="actions">
-          <button class="primary" data-do="discard">Discard${p ? ' & use power' : ''}</button>
-        </div>`;
+      return `<div class="msg">Select one of your cards and press <b>Swap</b>, or press <b>Discard</b>.${p ? `<br><span class="muted">Discarding it lets you: ${POWER_TEXT[p].toLowerCase()}.</span>` : ''}</div>`;
     }
     if (g.stage === 'power') {
       const pw = g.power;
-      let msg = POWER_TEXT[pw.type];
-      if (pw.type === 'lookSwap') msg = pw.step === 'look' ? 'Pick any 2 cards to look at' : 'Now pick any 2 cards to swap, or keep things as they are';
-      if (pw.type === 'swap') msg = 'Pick any 2 cards to swap (no looking)';
-      if (pw.type === 'peekOwn') msg = 'Pick one of your cards to look at';
-      if (pw.type === 'peekOther') msg = "Pick another player's card to look at";
-      const need = pw.type === 'peekOwn' || pw.type === 'peekOther' ? 1 : 2;
-      return `<div class="msg"><b>${msg}.</b> ${need === 2 ? `(${S.selected.length}/2 picked)` : ''}</div>
-        <div class="actions">
-          ${S.selected.length ? '<button class="ghost small" data-do="clearsel">Clear</button>' : ''}
-          <button class="secondary" data-do="skip">${pw.step === 'swap' ? "Don't swap" : 'Skip power'}</button>
-        </div>`;
+      let msg = '';
+      if (pw.type === 'peekOwn') msg = 'Select one of your cards, then press <b>Look</b>';
+      if (pw.type === 'peekOther') msg = "Select another player's card, then press <b>Look</b>";
+      if (pw.type === 'swap') msg = `Select any 2 cards (${n}/2), then press <b>Swap cards</b>`;
+      if (pw.type === 'lookSwap') {
+        msg = pw.step === 'look'
+          ? `Select any 2 cards to look at (${n}/2), then press <b>Look</b>`
+          : `Now select any 2 cards to swap (${n}/2) and press <b>Swap cards</b>, or press <b>Don't swap</b>`;
+      }
+      return `<div class="msg">${msg}.</div>`;
     }
     return '';
+  }
+
+  // Turn timer, counted locally between server updates.
+  function turnLeft() {
+    if (S.turnFrozen !== null) return S.turnFrozen;
+    return Math.max(0, (S.turnDeadline || 0) - Date.now());
+  }
+  function turnPct() {
+    const total = (S.room && S.room.game && S.room.game.turnMs) || 1;
+    return Math.max(0, Math.min(100, (turnLeft() / total) * 100));
+  }
+
+  function closingLeft() {
+    return Math.max(0, (S.closingDeadline || 0) - Date.now());
   }
 
   function rankName(c) {
@@ -552,9 +624,24 @@
   function renderGame(room) {
     const g = room.game;
     const me = room.you;
-    const key = selectionKey(g);
-    if (key !== S.selectKey) { S.selected = []; S.selectKey = key; }
-    const mode = targetMode(g, me);
+    // Drop selections that no longer point at a card.
+    S.selected = S.selected.filter((t) => cardAtView(g, t));
+    if (g.phase !== 'play') S.selected = [];
+    if (g.turnMsLeft !== null && g.turnMsLeft !== undefined) {
+      S.turnFrozen = g.paused ? g.turnMsLeft : null;
+      const deadline = Date.now() + g.turnMsLeft;
+      if (!S.turnDeadline || Math.abs(S.turnDeadline - deadline) > 400 || S.turnKey !== `${g.current}:${g.stage}`) S.turnDeadline = deadline;
+      S.turnKey = `${g.current}:${g.stage}`;
+    } else {
+      S.turnDeadline = null;
+      S.turnFrozen = null;
+    }
+    if (g.closingMsLeft !== null && g.closingMsLeft !== undefined) {
+      const deadline = Date.now() + g.closingMsLeft;
+      if (!S.closingDeadline || Math.abs(S.closingDeadline - deadline) > 400) S.closingDeadline = deadline;
+    } else {
+      S.closingDeadline = null;
+    }
 
     const myIdx = g.players.findIndex((p) => p.id === me);
     const ordered = myIdx === -1 ? g.players : g.players.slice(myIdx + 1).concat(g.players.slice(0, myIdx));
@@ -562,7 +649,7 @@
     const mine = g.players[myIdx];
 
     const myTurn = g.current === me;
-    const canDraw = mode.kind === 'draw';
+    const canDraw = actionState(g, me).draw;
     const drawn = g.drawn;
     const holder = g.players.find((p) => p.id === g.current);
     const discardId = g.discardTop ? g.discardTop.id : null;
@@ -577,24 +664,26 @@
 
     const totals = room.players.length && room.round > 1
       ? `<div class="scores"><h3>Room totals</h3><table>${[...room.players].sort((a, b) => a.totalScore - b.totalScore).map((p) => `<tr><td>${esc(p.name)}</td><td>${p.wins}🏆 · ${p.totalScore} pts</td></tr>`).join('')}</table></div>` : '';
+    const showPanel = g.phase === 'play' && myIdx !== -1;
 
     app.innerHTML = `
       <section class="table">
         <div class="play-area">
-          <div class="opponents">${opponents.map((p) => seatHtml(g, p, me, mode, false)).join('')}</div>
+          <div class="opponents">${opponents.map((p) => seatHtml(g, p, me, false)).join('')}</div>
           <div class="center-row">
-            <div class="pile">${g.deckCount ? cardHtml({ hidden: true }, { clickable: canDraw, key: 'deck', data: { do: 'drawdeck' } }) : cardHtml(null, { key: 'deck' })}<span>Deck · ${g.deckCount}</span></div>
+            <div class="pile">${g.deckCount ? cardHtml({ hidden: true }, { clickable: canDraw, key: 'deck', data: { do: 'draw' } }) : cardHtml(null, { key: 'deck' })}<span>Deck · ${g.deckCount}</span></div>
             ${drawnHtml}
-            <div class="pile">${discardHtml(g, popDiscard)}<span>Discard · ${g.discardCount}</span>${g.phase === 'play' ? '<span class="stick-hint">Double-tap a matching card to stick it</span>' : ''}</div>
+            ${showPanel ? panelHtml(g, me) : ''}
+            <div class="pile">${discardHtml(g, popDiscard)}<span>Discard · ${g.discardCount}</span></div>
           </div>
           ${resultsHtml(g, room)}
-          ${g.phase !== 'ended' ? `<div class="prompt">${promptHtml(g, me, room)}</div>` : ''}
-          <div class="mine">${mine ? seatHtml(g, mine, me, mode, true) : '<p class="center muted">You are watching this game. You can play from the next round.</p>'}</div>
+          ${g.phase !== 'ended' ? `<div class="prompt">${promptHtml(g, me)}</div>` : ''}
+          <div class="mine">${mine ? seatHtml(g, mine, me, true) : '<p class="center muted">You are watching this game. You can play from the next round.</p>'}</div>
         </div>
         <aside class="side">
           <div class="log" id="log"><h3>What happened</h3>${g.log.map((l) => `<p>${esc(l.text)}</p>`).join('')}</div>
           ${totals}
-          ${g.phase !== 'ended' ? '<button class="ghost small" data-do="leave">Leave room</button>' : ''}
+          ${g.phase !== 'ended' ? `<button class="ghost small" data-do="leave">${confirming('leave') ? 'Tap again to leave' : 'Leave room'}</button>` : ''}
         </aside>
       </section>`;
     const log = document.getElementById('log');
@@ -610,70 +699,81 @@
     return g.discardTop ? cardHtml(g.discardTop, { pop: popDiscard, key: 'discard' }) : cardHtml(null, { key: 'discard' });
   }
 
+  // Update the end-of-round countdown without re-rendering the table.
+  setInterval(() => {
+    const el = app.querySelector('.countdown');
+    if (el) el.textContent = String(Math.ceil(closingLeft() / 1000));
+    const secs = app.querySelector('.turn-secs');
+    if (secs) {
+      const left = turnLeft();
+      secs.textContent = `${Math.ceil(left / 1000)}s`;
+      secs.classList.toggle('low', left <= 3000);
+      const fill = app.querySelector('.turn-fill');
+      if (fill) { fill.style.width = `${turnPct()}%`; fill.classList.toggle('low', left <= 3000); }
+    }
+  }, 200);
+
   // ---------- clicks ----------
+  function askToConfirm(kind) {
+    S.confirm = { kind, until: Date.now() + 4000 };
+    render();
+    setTimeout(() => { if (S.confirm && S.confirm.until <= Date.now()) { S.confirm = null; render(); } }, 4100);
+  }
+
+  function useSelection(n) {
+    const targets = S.selected.slice(0, n);
+    S.selected = [];
+    return targets;
+  }
+
   app.addEventListener('click', (e) => {
     const el = e.target.closest('[data-do], [data-pid]');
     if (!el || !S.room) return;
     const g = S.room.game;
     const d = el.dataset.do;
+    if (el.disabled) return;
     if (d === 'ready') return act('ready');
-    if (d === 'drawdeck' && el.classList.contains('clickable')) return act('draw_deck');
-    if (d === 'discard') return act('discard');
-    if (d === 'cambio') {
-      if (confirmCambio()) act('call_cambio');
-      return;
-    }
-    if (d === 'skip') return act('skip_power');
-    if (d === 'clearsel') { S.selected = []; return render(); }
     if (d === 'again') return call('start_game', {});
-    if (d === 'leave') { if (window.confirm('Leave this room?')) leaveRoom(); return; }
-
-    if (el.dataset.pid !== undefined && g) {
-      const t = { pid: el.dataset.pid, slot: Number(el.dataset.slot) };
-      const key = `s:${t.pid}:${t.slot}`;
-      const now = performance.now();
-      // Second tap on the same card quickly: stick it.
-      if (S.lastTap && S.lastTap.key === key && now - S.lastTap.time < 350) {
-        clearTimeout(S.tapTimer);
-        S.lastTap = null;
-        if (el.classList.contains('stickable')) act('stick', { target: t });
-        return;
-      }
-      S.lastTap = { key, time: now };
-      if (!el.classList.contains('clickable')) return;
-      const run = () => singleTap(g, t);
-      // If this card could also be stuck, wait a moment to see if a second tap is coming.
-      if (el.classList.contains('stickable')) { clearTimeout(S.tapTimer); S.tapTimer = setTimeout(run, 260); }
-      else run();
+    if (d === 'leave') {
+      if (S.room.game && S.room.game.phase !== 'ended' && !confirming('leave')) return askToConfirm('leave');
+      S.confirm = null;
+      return leaveRoom();
     }
-  });
-
-  function singleTap(g0, t) {
-    const g = S.room && S.room.game;
     if (!g) return;
-    const mode = targetMode(g, S.room.you);
-    if (mode.kind === 'give') return act('give', { slot: t.slot });
-    if (mode.kind === 'swapDrawn') return act('swap', { slot: t.slot });
-    if (mode.kind === 'power') {
-      if (!mode.filter(t.pid)) return;
+    if (d === 'draw') { if (actionState(g, S.room.you).draw) act('draw_deck'); return; }
+    if (d === 'discard') return act('discard');
+    if (d === 'swap') { const [t] = useSelection(1); act('swap', { slot: t.slot }); return render(); }
+    if (d === 'give') { const [t] = useSelection(1); act('give', { slot: t.slot }); return render(); }
+    if (d === 'stick') { const [t] = useSelection(1); act('stick', { target: t }); return render(); }
+    if (d === 'power') {
+      const need = g.power && (g.power.type === 'peekOwn' || g.power.type === 'peekOther') ? 1 : 2;
+      act('power_pick', { targets: useSelection(need) });
+      return render();
+    }
+    if (d === 'skip') { S.selected = []; return act('skip_power'); }
+    if (d === 'done') return act('done_sticking');
+    if (d === 'cambio') {
+      if (!confirming('cambio')) return askToConfirm('cambio');
+      S.confirm = null;
+      act('call_cambio');
+      return render();
+    }
+
+    // Tapping a card selects or unselects it (up to 2 at a time).
+    if (el.dataset.pid !== undefined && el.classList.contains('clickable')) {
+      const t = { pid: el.dataset.pid, slot: Number(el.dataset.slot) };
       const i = S.selected.findIndex((x) => x.pid === t.pid && x.slot === t.slot);
-      if (i >= 0) S.selected.splice(i, 1); else S.selected.push(t);
-      if (S.selected.length >= mode.need) {
-        const targets = S.selected.slice(0, mode.need);
-        S.selected = [];
-        act('power_pick', { targets });
+      if (i >= 0) S.selected.splice(i, 1);
+      else {
+        S.selected.push(t);
+        if (S.selected.length > 2) S.selected.shift();
       }
       render();
     }
-  }
-  app.addEventListener('dblclick', (e) => e.preventDefault());
+  });
   app.addEventListener('keydown', (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.card.clickable')) { e.preventDefault(); e.target.click(); }
   });
-
-  function confirmCambio() {
-    return window.confirm('Call Cambrio? Everyone else gets one more turn, then all cards are revealed.');
-  }
 
   // ---------- render ----------
   function render() {

@@ -31,16 +31,18 @@ test('a lone player is never matched with nobody', () => {
   assert.equal(matches.length, 0);
 });
 
-test('3 players start after 20s, 2 after 45s', () => {
+test('2 or 3 players start once nobody new joins for 10s', () => {
   const { mm, matches, advance } = setup();
-  mm.join('a'); mm.join('b'); mm.join('c');
-  advance(19);
+  mm.join('a'); mm.join('b');
+  advance(9);
+  mm.join('c'); // a new join restarts the 10s
+  advance(9);
   assert.equal(matches.length, 0);
   advance(1);
   assert.deepEqual(matches, [['a', 'b', 'c']]);
 
   mm.join('x'); mm.join('y');
-  advance(44);
+  advance(9);
   assert.equal(matches.length, 1);
   advance(1);
   assert.deepEqual(matches[1], ['x', 'y']);
