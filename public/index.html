@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cambrio Online</title>
+  <meta name="description" content="Play the card game Cambrio online with friends in a private room.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='10' y='6' width='40' height='54' rx='6' fill='%23f5efe0' stroke='%23123' stroke-width='3'/%3E%3Ctext x='30' y='42' font-size='26' text-anchor='middle' fill='%23c0392b' font-family='Georgia'%3E%E2%99%A5%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand"><span class="brand-mark">♠</span> Cambrio</a>
+    <div id="roomBadge" class="room-badge" hidden></div>
+    <button id="rulesBtn" class="ghost small" type="button">Rules</button>
+  </header>
+
+  <main id="app"></main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="rulesDialog">
+    <div class="rules">
+      <h2>How to play</h2>
+      <p>Everyone gets 4 face-down cards (or 6, if the host picks that). At the start you peek at your bottom row, then those cards go face down. Try to remember them!</p>
+      <p><b>Goal:</b> have the lowest total when the round ends.</p>
+      <h3>On your turn</h3>
+      <ul>
+        <li>Draw from the <b>deck</b>, then either swap it with one of your cards (the old card is discarded) or discard it. You can't take from the discard pile.</li>
+        <li>Or call <b>Cambrio</b> instead of drawing. Everyone else gets one last turn. Your cards can still be swapped and stuck.</li>
+      </ul>
+      <h3>Powers</h3>
+      <p>A power works only when you draw the card from the deck and discard it straight away.</p>
+      <ul>
+        <li><b>7 or 8:</b> look at one of your own cards.</li>
+        <li><b>9 or 10:</b> look at one of another player's cards.</li>
+        <li><b>J or Q:</b> swap any two cards without looking.</li>
+        <li><b>Black King:</b> look at any two cards, then you may swap any two.</li>
+      </ul>
+      <h3>Sticking</h3>
+      <p><b>Double-tap</b> (or double-click) any card, yours or another player's, to stick it on the discard pile if you think it matches the top card's rank. It flips over so everyone sees it. Do it any time, as often as you like. Be quick!</p>
+      <ul>
+        <li>Stick your own card: it leaves your hand.</li>
+        <li>Stick another player's card: you then give them one of your cards.</li>
+        <li>Wrong card: it goes back where it was and you take a penalty card.</li>
+      </ul>
+      <h3>Ties</h3>
+      <p>The Cambrio caller wins ties. Any other tie goes to the player with the lowest single card.</p>
+      <h3>Card values</h3>
+      <p>Joker 0, Red King −1, Ace 1, 2–10 face value, Jack 11, Queen 12, Black King 13.</p>
+      <form method="dialog"><button class="primary">Got it</button></form>
+    </div>
+  </dialog>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cambrio Quick Play</title>
+<style>
+  :root { --bg:#0f3d2e; --card:#fffaf0; --ink:#1d1d1d; --muted:#6b6b6b; --accent:#d4a017; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); font-family: system-ui, sans-serif; color:var(--ink); padding:16px; }
+  .panel { background:var(--card); border-radius:14px; padding:28px; width:100%; max-width:380px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.3); }
+  h1 { margin:0 0 4px; font-size:1.6rem; }
+  p { color:var(--muted); margin:6px 0; }
+  input { width:100%; padding:12px; font-size:1rem; border:1px solid #ccc; border-radius:8px; margin:14px 0 10px; }
+  button { width:100%; padding:12px; font-size:1rem; border:0; border-radius:8px; cursor:pointer; background:var(--accent); color:#1d1d1d; font-weight:600; margin-top:6px; }
+  button.secondary { background:#e8e2d4; }
+  .big { font-size:2.4rem; font-weight:700; margin:12px 0 0; color:var(--ink); }
+  .dots span { display:inline-block; width:10px; height:10px; margin:0 3px; border-radius:50%; background:#ccc; }
+  .dots span.on { background:var(--accent); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>Quick Play</h1>
+
+  <section id="start">
+    <p>Get matched with random players.</p>
+    <input id="name" maxlength="20" placeholder="Your name">
+    <button id="joinBtn">Find a game</button>
+  </section>
+
+  <section id="waiting" hidden>
+    <p>Looking for players…</p>
+    <div class="dots" id="dots"></div>
+    <p class="big" id="timer">0:00</p>
+    <p id="detail"></p>
+    <button class="secondary" id="leaveBtn">Cancel</button>
+  </section>
+
+  <section id="matched" hidden>
+    <p>Game found!</p>
+    <p class="big" id="roomCode"></p>
+    <p id="players"></p>
+  </section>
+
+  <section id="timedout" hidden>
+    <p>Nobody else is around right now.</p>
+    <button id="retryBtn">Keep waiting</button>
+    <button class="secondary" onclick="location.href='/'">Make a private room instead</button>
+  </section>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+  const $ = (id) => document.getElementById(id);
+  const show = (id) => ['start','waiting','matched','timedout'].forEach((s) => $(s).hidden = s !== id);
+  // Same stable id the private rooms client uses.
+  let playerId = null;
+  try { playerId = localStorage.getItem('cambioPlayerId'); } catch {}
+  if (!playerId) {
+    playerId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+    try { localStorage.setItem('cambioPlayerId', playerId); } catch {}
+  }
+  try { $('name').value = localStorage.getItem('cambioName') || ''; } catch {}
+
+  function join() {
+    const name = $('name').value.trim() || 'Player';
+    try { localStorage.setItem('cambioName', name); } catch {}
+    socket.emit('quickplay:join', { name, playerId });
+    show('waiting');
+  }
+  $('joinBtn').onclick = join;
+  $('retryBtn').onclick = join;
+  $('leaveBtn').onclick = () => { socket.emit('quickplay:leave'); show('start'); };
+
+  socket.on('quickplay:status', (s) => {
+    const m = Math.floor(s.waitedSec / 60), sec = String(s.waitedSec % 60).padStart(2, '0');
+    $('timer').textContent = `${m}:${sec}`;
+    $('dots').innerHTML = Array.from({ length: s.idealSize }, (_, i) => `<span class="${i < s.waiting ? 'on' : ''}"></span>`).join('');
+    $('detail').textContent = s.waiting === 1
+      ? 'You are the only one waiting.'
+      : `${s.waiting} players waiting. ${s.needed ? `Need ${s.needed} more to start.` : 'Starting…'}`;
+  });
+
+  socket.on('matched', ({ code, players }) => {
+    show('matched');
+    $('roomCode').textContent = code;
+    $('players').textContent = 'With ' + players.join(', ');
+    // Hand off to the room page from the private rooms build.
+    setTimeout(() => { location.href = '/?room=' + encodeURIComponent(code); }, 1500);
+  });
+
+  socket.on('quickplay:timeout', () => show('timedout'));
+  socket.on('disconnect', () => show('start'));
+</script>
+</body>
+</html>
