@@ -254,6 +254,45 @@
     }, delay);
   }
 
+  // Someone called Cambrio: a big "CAMBRIO!" pops up in the middle of the screen,
+  // then shrinks and flies onto the caller's seat, where the CAMBRIO tag stays.
+  async function cambioFx(ev) {
+    const g = S.room && S.room.game;
+    const who = ev.by === (S.room && S.room.you) ? 'You' : nameIn(g || { players: [] }, ev.by);
+    S.cambioFlying = true;
+    document.querySelectorAll('.cambio-tag').forEach((t) => { t.style.visibility = 'hidden'; });
+    const el = document.createElement('div');
+    el.className = 'cambio-pop';
+    el.innerHTML = `<b>CAMBRIO!</b><span>${who} called it</span>`;
+    document.body.appendChild(el);
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    try {
+      await el.animate([
+        { transform: 'translate(-50%, -50%) scale(.3) rotate(-8deg)', opacity: 0 },
+        { transform: 'translate(-50%, -50%) scale(1.15) rotate(2deg)', opacity: 1, offset: 0.6 },
+        { transform: 'translate(-50%, -50%) scale(1) rotate(0)', opacity: 1 },
+      ], { duration: reduce ? 1 : 500, easing: 'cubic-bezier(.2,.9,.3,1.3)', fill: 'forwards' }).finished;
+      await wait(reduce ? 900 : 1100);
+      const seat = document.querySelector(`[data-seat="${CSS.escape(ev.by)}"]`);
+      const tag = seat && (seat.querySelector('.cambio-tag') || seat.querySelector('.seat-head'));
+      if (tag) {
+        const r = tag.getBoundingClientRect();
+        const box = el.getBoundingClientRect();
+        const dx = r.left + r.width / 2 - (box.left + box.width / 2);
+        const dy = r.top + r.height / 2 - (box.top + box.height / 2);
+        const scale = Math.max(0.12, r.width / box.width);
+        await el.animate([
+          { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 },
+          { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${scale})`, opacity: 0.6 },
+        ], { duration: reduce ? 1 : 650, easing: 'cubic-bezier(.5,0,.3,1)', fill: 'forwards' }).finished;
+      }
+    } finally {
+      el.remove();
+      S.cambioFlying = false;
+      document.querySelectorAll('.cambio-tag').forEach((t) => { t.style.visibility = ''; t.classList.add('pop'); });
+    }
+  }
+
   // Cards someone looked at or swapped glow for a few seconds so nobody misses it.
   const FLASH_MS = 4000;
   function flashCards(places, kind, delay) {
@@ -272,6 +311,7 @@
       else if (ev.kind === 'stick') { stickFx(ev, startRects.get(placeKey(ev.at)), t); t += ev.ok ? 1200 : 1350; }
       else if (ev.kind === 'peek') { peekFx(ev, t); flashCards(ev.at, 'look', t); }
       else if (ev.kind === 'swapped') flashCards(ev.at, 'swap', t + 650);
+      else if (ev.kind === 'cambio') cambioFx(ev);
     }
   }
 
@@ -583,10 +623,10 @@
     }).join('');
     const timerOn = g.current === p.id && g.turnMsLeft !== null && g.turnMsLeft !== undefined;
     const tags = [];
-    if (g.cambioBy === p.id) tags.push('<span class="tag">CAMBRIO</span>');
+    if (g.cambioBy === p.id) tags.push(`<span class="tag cambio-tag" ${S.cambioFlying ? 'style="visibility:hidden"' : ''}>CAMBRIO</span>`);
     if (g.phase === 'peek' && p.ready) tags.push('<span class="tag" style="background:#4cd187">READY</span>');
     return `
-      <div class="seat ${isMe ? 'me' : ''} ${g.current === p.id ? 'turn' : ''} ${p.connected ? '' : 'away'}">
+      <div data-seat="${esc(p.id)}" class="seat ${isMe ? 'me' : ''} ${g.current === p.id ? 'turn' : ''} ${p.connected ? '' : 'away'}">
         <div class="seat-head"><span class="dot ${p.connected ? '' : 'off'}"></span>${esc(isMe ? `${p.name} (you)` : p.name)}${p.connected ? '' : ' <span class="muted">· away</span>'} ${tags.join('')}${timerOn ? `<span class="turn-secs">${Math.ceil(turnLeft() / 1000)}s</span>` : ''}</div>
         <div class="hand ${cols}">${cards}</div>
         <div class="turn-bar ${timerOn ? '' : 'off'}"><div class="turn-fill" style="width:${timerOn ? turnPct() : 0}%"></div></div>

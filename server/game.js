@@ -420,6 +420,7 @@ class Game {
     if (this.cambioBy) throw new GameError('Cambrio has already been called');
     this.cambioBy = pid;
     this.turnsLeft = this.players.length - 1;
+    this.fx.push({ kind: 'cambio', by: pid });
     this.addLog(`${this.name(pid)} called CAMBRIO! Everyone else gets one more turn.`);
     this.endTurn();
   }
