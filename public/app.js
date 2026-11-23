@@ -582,8 +582,31 @@
       <div class="seat ${isMe ? 'me' : ''} ${g.current === p.id ? 'turn' : ''} ${p.connected ? '' : 'away'}">
         <div class="seat-head"><span class="dot ${p.connected ? '' : 'off'}"></span>${esc(isMe ? `${p.name} (you)` : p.name)}${p.connected ? '' : ' <span class="muted">· away</span>'} ${tags.join('')}${timerOn ? `<span class="turn-secs">${Math.ceil(turnLeft() / 1000)}s</span>` : ''}</div>
         <div class="hand ${cols}">${cards}</div>
-        ${timerOn ? `<div class="turn-bar"><div class="turn-fill" style="width:${turnPct()}%"></div></div>` : ''}
+        <div class="turn-bar ${timerOn ? '' : 'off'}"><div class="turn-fill" style="width:${timerOn ? turnPct() : 0}%"></div></div>
+        ${isMe && g.phase !== 'ended' ? trackerHtml(g, p) : ''}
       </div>`;
+  }
+
+  // Score tracker: adds up the cards in your hand that you can see or have noted
+  // with a single "is", so you can judge when to call Cambrio.
+  const RANK_VALUE = { 'K-red': -1, JOKER: 0, A: 1, J: 11, Q: 12, 'K-black': 13 };
+  function valueOfCard(c) {
+    if (c.rank === 'K') return c.suit === 'H' || c.suit === 'D' ? -1 : 13;
+    return c.rank in RANK_VALUE ? RANK_VALUE[c.rank] : Number(c.rank);
+  }
+  function trackerHtml(g, p) {
+    const parts = p.slots.filter(Boolean).map((c) => {
+      if (!c.hidden) return { v: valueOfCard(c) };
+      if (c.note && c.note.is && c.note.is.length === 1) return { v: RANK_VALUE[c.note.is[0]] ?? Number(c.note.is[0]), noted: true };
+      return null;
+    });
+    const known = parts.filter(Boolean);
+    const unknown = parts.length - known.length;
+    const sum = known.reduce((t, x) => t + x.v, 0);
+    const terms = parts.map((x) => (x ? `<b class="${x.noted ? 'noted' : ''}">${x.v}</b>` : '<span class="q">?</span>')).join(' + ');
+    const tail = unknown === parts.length ? 'nothing known yet'
+      : `= <b>${sum}</b>${unknown ? ` + ${unknown} unknown` : ''}`;
+    return `<div class="tracker" aria-label="Your known total">Your cards: ${terms} ${tail}</div>`;
   }
 
   function promptHtml(g, me) {
@@ -746,7 +769,7 @@
     const showPanel = g.phase === 'play' && myIdx !== -1;
 
     app.innerHTML = `
-      <section class="table">
+      <section class="table ${showPanel ? 'playing' : ''}">
         <div class="play-area">
           <div class="opponents">${opponents.map((p) => seatHtml(g, p, me, false)).join('')}</div>
           <div class="mid">
@@ -808,6 +831,16 @@
         <button class="ghost small" data-do="notedone">Cancel</button>
       </div>
     </div>`;
+  }
+
+  function openNote(g, cards) {
+    S.noteMode = true;
+    S.noteSel = cards;
+    S.selected = [];
+    const one = cards.length === 1 && cardAtView(g, cards[0]);
+    const n = one && one.note;
+    S.noteInfo = n ? { is: [...n.is], not: [...n.not], knows: [...(n.knows || [])] } : { is: [], not: [], knows: [] };
+    render();
   }
 
   function closeNotes() {
@@ -897,13 +930,7 @@
     if (d === 'cardsleft') { S.showLeft = !S.showLeft; return render(); }
     if (d === 'note') {
       if (S.noteMode) { closeNotes(); return render(); }
-      S.noteMode = true;
-      S.noteSel = S.selected.slice();
-      S.selected = [];
-      const one = S.noteSel.length === 1 && cardAtView(g, S.noteSel[0]);
-      const n = one && one.note;
-      S.noteInfo = n ? { is: [...n.is], not: [...n.not], knows: [...(n.knows || [])] } : { is: [], not: [], knows: [] };
-      return render();
+      return openNote(g, S.selected.slice());
     }
     if (d === 'notedone') { closeNotes(); return render(); }
     if (d === 'noterank') {
@@ -961,17 +988,33 @@
     const el = cardKeyOf(e.target);
     if (!el || !S.room || !S.room.game || (e.pointerType === 'mouse' && e.button !== 0)) return;
     drag = { start: el.dataset.key, keys: [el.dataset.key], moved: false };
+    // Long-press a card (about half a second) to open its note straight away.
+    const g = S.room.game;
+    if (opt(g, 'notes') && g.phase === 'play' && !S.noteMode) {
+      const d = drag;
+      d.press = setTimeout(() => {
+        if (drag !== d || d.moved) return;
+        drag = null;
+        S.suppressClick = Date.now() + 600;
+        const [, pid, slot] = d.start.split(':');
+        openNote(S.room.game, [{ pid, slot: Number(slot) }]);
+        if (navigator.vibrate) try { navigator.vibrate(15); } catch { /* not supported */ }
+      }, 500);
+    }
   });
+  app.addEventListener('contextmenu', (e) => { if (cardKeyOf(e.target)) e.preventDefault(); });
   app.addEventListener('pointermove', (e) => {
     if (!drag) return;
     const el = cardKeyOf(document.elementFromPoint(e.clientX, e.clientY));
     if (!el || drag.keys.includes(el.dataset.key)) return;
     drag.moved = true;
+    clearTimeout(drag.press);
     drag.keys.push(el.dataset.key);
     for (const k of drag.keys) { const c = app.querySelector(`[data-key="${k}"]`); if (c) c.classList.add(S.noteMode ? 'note-pick' : 'selected'); }
   });
   const endDrag = () => {
     const d = drag; drag = null;
+    if (d) clearTimeout(d.press);
     if (!d || !d.moved || !S.room || !S.room.game) return;
     const g = S.room.game;
     const picked = d.keys.map((k) => { const [, pid, slot] = k.split(':'); return { pid, slot: Number(slot) }; })
@@ -986,7 +1029,7 @@
     render();
   };
   window.addEventListener('pointerup', endDrag);
-  window.addEventListener('pointercancel', () => { drag = null; });
+  window.addEventListener('pointercancel', () => { if (drag) clearTimeout(drag.press); drag = null; });
 
   app.addEventListener('keydown', (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.card.clickable')) { e.preventDefault(); e.target.click(); }
