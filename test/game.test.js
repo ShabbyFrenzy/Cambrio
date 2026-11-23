@@ -291,11 +291,11 @@ test('rooms: host sets max players, joins stop at the limit', () => {
   assert.throws(() => rooms.setMaxPlayers(room.code, 'h', 7), /2 to 6/);
 });
 
-test('after the final turn there are 5 seconds to stick, then the round ends', () => {
+test('with a 5s turn timer, the final sticking window is 5s too', () => {
   let now = 1000;
   const hands = [[C('A'), C('2'), C('3'), C('4')], [C('5'), C('6'), C('7'), C('8')]];
   const deck = rigged(hands, [C('9', 'H'), C('8', 'H')]);
-  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { deck, now: () => now });
+  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { deck, now: () => now, turnMs: 5000 });
   g.act('a', { type: 'ready' }); g.act('b', { type: 'ready' });
   g.act('a', { type: 'call_cambio' });
   g.act('b', { type: 'draw_deck' });
@@ -318,7 +318,7 @@ test('everything pauses until a sticker gives their card, even past the deadline
   let now = 0;
   const hands = [[C('A'), C('2'), C('3'), C('4')], [C('5'), C('6'), C('7'), C('5', 'D')]];
   const deck = rigged(hands, [C('4', 'H')]);
-  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { deck, now: () => now });
+  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { deck, now: () => now, turnMs: 5000 });
   g.act('a', { type: 'ready' }); g.act('b', { type: 'ready' });
   g.act('a', { type: 'call_cambio' });
   g.act('b', { type: 'draw_deck' });
@@ -328,8 +328,48 @@ test('everything pauses until a sticker gives their card, even past the deadline
   assert.throws(() => g.act('b', { type: 'stick', slot: 1 }), /Wait for Ann to give a card/);
   now = 10000;
   assert.strictEqual(g.tryFinish(), false);
+  assert.strictEqual(g.view('b').closingMsLeft, 5000); // the clock stood still while paused
   g.act('a', { type: 'give', slot: 0 });
+  assert.strictEqual(g.phase, 'play');
+  now = 15000;
+  assert.strictEqual(g.tryFinish(), true);
   assert.strictEqual(g.phase, 'ended');
+});
+
+test('no turn timer: the round ends when everyone presses No more sticks', () => {
+  const g = twoPlayer([C('9', 'H')]);
+  g.act('a', { type: 'call_cambio' });
+  g.act('b', { type: 'draw_deck' });
+  g.act('b', { type: 'swap', slot: 0 });
+  assert.strictEqual(g.stage, 'closing');
+  assert.strictEqual(g.view('a').closingMsLeft, null);
+  g.act('a', { type: 'done_sticking' });
+  assert.strictEqual(g.phase, 'play');
+  assert.deepStrictEqual(g.view('b').doneSticking, ['a']);
+  g.act('b', { type: 'done_sticking' });
+  assert.strictEqual(g.phase, 'ended');
+});
+
+test('turn timer: running out skips the turn and discards a held card', () => {
+  let now = 0;
+  const hands = [[C('A'), C('2'), C('3'), C('4')], [C('5'), C('6'), C('7'), C('8')]];
+  const deck = rigged(hands, [C('9', 'H'), C('6', 'H')]);
+  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { deck, now: () => now, turnMs: 10000 });
+  g.act('a', { type: 'ready' }); g.act('b', { type: 'ready' });
+  assert.strictEqual(g.view('a').turnMsLeft, 10000);
+  now = 4000;
+  g.act('a', { type: 'draw_deck' }); // 9H
+  now = 9999;
+  assert.strictEqual(g.checkTurnTimeout(), false);
+  now = 10000;
+  assert.strictEqual(g.checkTurnTimeout(), true);
+  assert.strictEqual(g.discard.at(-1).rank, '9');
+  assert.strictEqual(g.stage, 'draw');
+  assert.strictEqual(g.current().id, 'b');
+  assert.strictEqual(g.view('b').turnMsLeft, 10000);
+  now = 20000;
+  assert.strictEqual(g.checkTurnTimeout(), true); // b did nothing
+  assert.strictEqual(g.current().id, 'a');
 });
 
 test('autoGive hands over a random card when the sticker stalls', () => {

@@ -47,6 +47,7 @@ function socketsFor(room, playerId) {
 
 // Skip the turn of a player who stays away too long.
 const turnTimers = new Map(); // code -> timeout
+const clockTimers = new Map(); // code -> timeout for the turn timer
 const closeTimers = new Map(); // code -> timeout for the end-of-round sticking window
 const giveTimers = new Map(); // "code:playerId" -> timeout for a sticker who must give a card
 
@@ -55,7 +56,17 @@ function checkTimers(room) {
   // End the sticking window on time (or as soon as any pending give is done).
   clearTimeout(closeTimers.get(room.code));
   closeTimers.delete(room.code);
-  if (g && g.phase === 'play' && g.stage === 'closing') {
+  // Turn timer: skip the turn when it runs out.
+  clearTimeout(clockTimers.get(room.code));
+  clockTimers.delete(room.code);
+  if (g && g.phase === 'play' && g.stage !== 'closing' && g.turnDeadline && g.pauseStart === null) {
+    const wait = Math.max(0, g.turnDeadline - Date.now()) + 50;
+    clockTimers.set(room.code, setTimeout(() => {
+      clockTimers.delete(room.code);
+      if (room.game === g && g.checkTurnTimeout()) { broadcast(room); checkAwayTurn(room); }
+    }, wait).unref());
+  }
+  if (g && g.phase === 'play' && g.stage === 'closing' && g.closingUntil !== null && g.pauseStart === null) {
     const wait = Math.max(0, g.closingUntil - Date.now()) + 50;
     closeTimers.set(room.code, setTimeout(() => {
       closeTimers.delete(room.code);
@@ -82,7 +93,7 @@ function checkAwayTurn(room) {
   clearTimeout(turnTimers.get(room.code));
   turnTimers.delete(room.code);
   const g = room.game;
-  if (!g || g.phase !== 'play' || g.stage === 'closing') return;
+  if (!g || g.phase !== 'play' || g.stage === 'closing' || g.turnMs) return; // the turn timer handles away players
   const cur = g.current();
   if (cur.connected) return;
   turnTimers.set(room.code, setTimeout(() => {
@@ -166,6 +177,12 @@ io.on('connection', (socket) => {
   socket.on('set_hand_size', safe(socket, ({ size }) => {
     const room = currentRoom(socket);
     rooms.setHandSize(room.code, socket.data.playerId, size);
+    broadcast(room);
+  }));
+
+  socket.on('set_turn_timer', safe(socket, ({ value }) => {
+    const room = currentRoom(socket);
+    rooms.setTurnTimer(room.code, socket.data.playerId, value);
     broadcast(room);
   }));
 

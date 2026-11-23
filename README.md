@@ -47,14 +47,16 @@ Open two browser windows (or one normal and one private window) to play against 
   - Sticking another player's card: the sticker then gives that player one of their own cards. *(guess)*
   - The whole table pauses until that card is given (a random card is given after 20 seconds).
   - To stick: select a card, then press Stick in the action panel.
-- After the final turn there are 5 seconds to stick before the cards are revealed.
+- Turn timer: the host can set one (off, 10, 15, 20, 30 or 60 seconds). Quick play always uses 10 seconds.
+- After the final turn, the sticking window lasts as long as the turn timer. With no timer, the cards are revealed once everyone presses "No more sticks".
 - The Cambrio caller wins ties. Any other tie goes to the player with the lowest single card (a player with no cards left counts as lowest). If that also ties, they share the win.
 
 ## Other guesses (easy to change)
 
 1. The host picks 4 or 6 cards each and the max players (2 to 8) in the lobby (6 cards allows up to 6 players). At the start you see your bottom row (2 cards, or 3 with 6 cards) until you press "I've got them".
 2. Calling Cambrio uses your turn and everyone else gets one more turn. The caller's cards are not locked: powers and sticks still work on them.
-3. A player who is away on their turn is skipped after 45 seconds.
+3. When the turn timer runs out, the turn is skipped (a drawn card is discarded without using its power). The power step gets a fresh timer, and timers freeze while the table waits for a card to be given. With no timer, a player who is away on their turn is skipped after 45 seconds.
+5. Quick play starts a game of 4 right away, or of 2 or 3 once nobody new has joined for 10 seconds.
 4. 2 to 8 players. The first player rotates each round, and the lobby keeps running totals.
 
 ## Hosting (free)

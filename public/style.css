@@ -179,6 +179,16 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @keyframes pop { from { transform: scale(.85); opacity: .3; } to { transform: scale(1); opacity: 1; } }
 .pop { animation: pop .25s ease-out; }
 
+/* ---------- turn timer ---------- */
+.seat { position: relative; }
+.turn-secs { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 13px; background: rgba(0,0,0,.3); border-radius: 999px; padding: 2px 8px; }
+.seat-head .tag + .turn-secs { margin-left: 6px; }
+.turn-secs.low { background: var(--red); color: #fff; }
+.turn-bar { height: 5px; border-radius: 999px; background: rgba(0,0,0,.3); margin-top: 10px; overflow: hidden; }
+.turn-fill { height: 100%; background: var(--gold); border-radius: 999px; transition: width .2s linear, background .3s; }
+.turn-fill.low { background: #ff6b5b; }
+.small-note { font-size: 13px; margin: 0; }
+
 /* ---------- action panel (left of the discard pile) ---------- */
 .action-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 190px; }
 .action-panel .act { padding: 7px 6px; font-size: 13px; border-radius: 10px; white-space: nowrap; }

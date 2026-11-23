@@ -2,7 +2,8 @@
 // Room registry. A room is a lobby of players that can play rounds of Cambrio.
 // Players are identified by a stable playerId the browser keeps in localStorage.
 
-const { Game, MAX_PLAYERS, MIN_PLAYERS, HAND_SIZES, MAX_PLAYERS_BY_HAND } = require('./game');
+const { Game, MAX_PLAYERS, MIN_PLAYERS, HAND_SIZES, MAX_PLAYERS_BY_HAND, TURN_TIMER_CHOICES } = require('./game');
+const QUICK_PLAY_TURN_SECONDS = 10;
 
 const rooms = new Map();
 // No I or O, to avoid confusion with 1 and 0.
@@ -39,6 +40,7 @@ function createRoom() {
     players: [], // {playerId, name, connected, totalScore, wins}
     game: null,
     handSize: 4,
+    turnSeconds: 0, // 0 = no turn timer
     maxPlayers: MAX_PLAYERS, // host can lower this for private rooms
     round: 0,
     createdAt: Date.now(),
@@ -94,7 +96,7 @@ function startGame(code, byPlayerId) {
   const order = seated.slice(offset).concat(seated.slice(0, offset));
   const max = MAX_PLAYERS_BY_HAND[room.handSize];
   if (order.length > max) throw new RoomError(`With ${room.handSize} cards each, at most ${max} players can play. Switch to 4 cards.`);
-  room.game = new Game(order.map((p) => ({ id: p.playerId, name: p.name })), { handSize: room.handSize });
+  room.game = new Game(order.map((p) => ({ id: p.playerId, name: p.name })), { handSize: room.handSize, turnMs: room.turnSeconds * 1000 });
   room.round++;
   room.scored = false;
   room.lastActive = Date.now();
@@ -114,6 +116,16 @@ function setHandSize(code, byPlayerId, size) {
   }
   room.handSize = n;
   room.maxPlayers = Math.min(room.maxPlayers, cap);
+}
+
+function setTurnTimer(code, byPlayerId, value) {
+  const room = getRoom(code);
+  if (!room) throw new RoomError('Room not found');
+  if (room.hostId !== byPlayerId) throw new RoomError('Only the host can change this');
+  if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
+  const n = Number(value);
+  if (!TURN_TIMER_CHOICES.includes(n)) throw new RoomError('Pick one of the listed turn timers');
+  room.turnSeconds = n;
 }
 
 function setMaxPlayers(code, byPlayerId, value) {
@@ -152,6 +164,7 @@ function createRoomWithPlayers(players, { autoStart = false } = {}) {
   if (autoStart) {
     // Players have not opened the room yet. Mark them away and make the peek
     // phase wait until they arrive (server/index.js gives up after a timeout).
+    room.turnSeconds = QUICK_PLAY_TURN_SECONDS;
     const game = startGame(room.code);
     for (const p of room.players) p.connected = false;
     for (const gp of game.players) {
@@ -171,6 +184,8 @@ function view(room, playerId) {
     handSize: room.handSize,
     maxPlayers: room.maxPlayers,
     maxPlayersCap: MAX_PLAYERS_BY_HAND[room.handSize],
+    turnSeconds: room.turnSeconds,
+    turnChoices: TURN_TIMER_CHOICES,
     isPublic: !!room.isPublic,
     players: room.players.map((p) => ({
       id: p.playerId,
@@ -192,6 +207,6 @@ function sweep(maxIdleMs = 30 * 60 * 1000) {
 }
 
 module.exports = {
-  rooms, RoomError, createRoom, getRoom, joinRoom, leaveRoom, startGame, setHandSize, setMaxPlayers,
+  rooms, RoomError, createRoom, getRoom, joinRoom, leaveRoom, startGame, setHandSize, setMaxPlayers, setTurnTimer,
   createRoomWithPlayers, recordResults, view, sweep, normalizeCode, cleanName,
 };

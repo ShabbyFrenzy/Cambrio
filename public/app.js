@@ -32,6 +32,9 @@
     endShownRound: null, // flip everyone's cards once when a round ends
     confirm: null,       // {kind:'cambio'|'leave', until} for in-game "are you sure?"
     closingDeadline: null, // local time when the end-of-round sticking window closes
+    turnDeadline: null,  // local time when the current turn runs out
+    turnFrozen: null,    // ms left while the game is paused
+    turnKey: '',
     lastDiscardId: null, // animate the discard pile only when it changes
     lastDrawnKey: null,
   };
@@ -380,6 +383,15 @@
               : `<b>${room.maxPlayers}</b>`}
             <span class="muted">· ${room.players.length} in room</span>
           </div>
+          <div class="option-row">
+            <label class="muted" for="turnTimer">Turn timer</label>
+            ${isHost
+              ? `<select id="turnTimer" data-do="turntimer">${room.turnChoices.map((n) => `<option value="${n}" ${n === room.turnSeconds ? 'selected' : ''}>${n ? `${n} seconds` : 'Off'}</option>`).join('')}</select>`
+              : `<b>${room.turnSeconds ? `${room.turnSeconds} seconds` : 'Off'}</b>`}
+          </div>
+          <p class="center muted small-note">${room.turnSeconds
+            ? `Each turn has ${room.turnSeconds} seconds. After the last turn there are ${room.turnSeconds} seconds to stick.`
+            : 'No turn timer. After the last turn, the round ends when everyone presses "No more sticks".'}</p>
           ${isHost
             ? `<button class="primary" data-do="start" ${online < 2 ? 'disabled' : ''}>${online < 2 ? 'Waiting for at least 2 players…' : `Start game with ${online} players`}</button>`
             : `<p class="center muted">Waiting for the host to start the game…</p>`}
@@ -398,6 +410,8 @@
     app.querySelector('[data-do="leave"]').onclick = leaveRoom;
     const maxSel = app.querySelector('[data-do="maxplayers"]');
     if (maxSel) maxSel.onchange = () => call('set_max_players', { value: Number(maxSel.value) });
+    const timerSel = app.querySelector('[data-do="turntimer"]');
+    if (timerSel) timerSel.onchange = () => call('set_turn_timer', { value: Number(timerSel.value) });
     app.querySelectorAll('[data-do="handsize"]').forEach((b) => {
       b.onclick = () => call('set_hand_size', { size: Number(b.dataset.size) });
     });
@@ -449,6 +463,8 @@
       give: playing && !!g.pendingGive && oneOwn,
       stick: playing && !paused && !!g.discardTop && sel.length === 1 && !!cardAtView(g, sel[0]),
       cambio: myTurn && g.stage === 'draw' && !g.cambioBy,
+      // At the very end with no timer, the Cambrio button becomes "No more sticks".
+      done: playing && !paused && g.stage === 'closing' && g.closingMsLeft === null && !(g.doneSticking || []).includes(me),
     };
   }
 
@@ -470,7 +486,9 @@
         ${btn('skip', a.skip.label, a.skip.enabled)}
         ${btn('give', 'Give', a.give, a.give ? 'primary' : 'secondary')}
         ${btn('stick', 'Stick', a.stick, 'primary wide')}
-        ${btn('cambio', sure ? 'Sure? Tap again' : 'Call Cambrio', a.cambio, `danger wide ${sure ? 'pulse' : ''}`)}
+        ${g.stage === 'closing' && g.closingMsLeft === null
+          ? btn('done', (g.doneSticking || []).includes(me) ? 'Waiting for others…' : 'No more sticks', a.done, 'primary wide')
+          : btn('cambio', sure ? 'Sure? Tap again' : 'Call Cambrio', a.cambio, `danger wide ${sure ? 'pulse' : ''}`)}
       </div>`;
   }
 
@@ -492,13 +510,15 @@
       if (g.phase === 'ended' && S.endShownRound !== S.room.round) flip = true;
       return `<div class="slot">${cardHtml(card, { clickable: selectable && !!c, selected, revealed, flip, key: `s:${p.id}:${slot}`, data: { pid: p.id, slot } })}<div class="card-tag">#${slot + 1}</div></div>`;
     }).join('');
+    const timerOn = g.current === p.id && g.turnMsLeft !== null && g.turnMsLeft !== undefined;
     const tags = [];
     if (g.cambioBy === p.id) tags.push('<span class="tag">CAMBRIO</span>');
     if (g.phase === 'peek' && p.ready) tags.push('<span class="tag" style="background:#4cd187">READY</span>');
     return `
       <div class="seat ${isMe ? 'me' : ''} ${g.current === p.id ? 'turn' : ''} ${p.connected ? '' : 'away'}">
-        <div class="seat-head"><span class="dot ${p.connected ? '' : 'off'}"></span>${esc(isMe ? `${p.name} (you)` : p.name)}${p.connected ? '' : ' <span class="muted">· away</span>'} ${tags.join('')}</div>
+        <div class="seat-head"><span class="dot ${p.connected ? '' : 'off'}"></span>${esc(isMe ? `${p.name} (you)` : p.name)}${p.connected ? '' : ' <span class="muted">· away</span>'} ${tags.join('')}${timerOn ? `<span class="turn-secs">${Math.ceil(turnLeft() / 1000)}s</span>` : ''}</div>
         <div class="hand ${cols}">${cards}</div>
+        ${timerOn ? `<div class="turn-bar"><div class="turn-fill" style="width:${turnPct()}%"></div></div>` : ''}
       </div>`;
   }
 
@@ -523,6 +543,11 @@
       return `<div class="msg">Paused: waiting for <b>${nameOf(g.owing[0])}</b> to give a card…</div>`;
     }
     if (g.stage === 'closing') {
+      if (g.closingMsLeft === null) {
+        const done = (g.doneSticking || []).length;
+        const total = g.players.filter((p) => p.connected).length;
+        return `<div class="msg"><b>Last chance to stick!</b> Press <b>No more sticks</b> when you're done. Cards are revealed when everyone has (${done} of ${total}).</div>`;
+      }
       return `<div class="msg"><b>Last chance to stick!</b> Cards are revealed in <b class="countdown">${Math.ceil(closingLeft() / 1000)}</b>…</div>`;
     }
     const stickTip = '<br><span class="muted">Spot a match on the pile? Select that card and press Stick.</span>';
@@ -554,6 +579,16 @@
       return `<div class="msg">${msg}.</div>`;
     }
     return '';
+  }
+
+  // Turn timer, counted locally between server updates.
+  function turnLeft() {
+    if (S.turnFrozen !== null) return S.turnFrozen;
+    return Math.max(0, (S.turnDeadline || 0) - Date.now());
+  }
+  function turnPct() {
+    const total = (S.room && S.room.game && S.room.game.turnMs) || 1;
+    return Math.max(0, Math.min(100, (turnLeft() / total) * 100));
   }
 
   function closingLeft() {
@@ -592,6 +627,15 @@
     // Drop selections that no longer point at a card.
     S.selected = S.selected.filter((t) => cardAtView(g, t));
     if (g.phase !== 'play') S.selected = [];
+    if (g.turnMsLeft !== null && g.turnMsLeft !== undefined) {
+      S.turnFrozen = g.paused ? g.turnMsLeft : null;
+      const deadline = Date.now() + g.turnMsLeft;
+      if (!S.turnDeadline || Math.abs(S.turnDeadline - deadline) > 400 || S.turnKey !== `${g.current}:${g.stage}`) S.turnDeadline = deadline;
+      S.turnKey = `${g.current}:${g.stage}`;
+    } else {
+      S.turnDeadline = null;
+      S.turnFrozen = null;
+    }
     if (g.closingMsLeft !== null && g.closingMsLeft !== undefined) {
       const deadline = Date.now() + g.closingMsLeft;
       if (!S.closingDeadline || Math.abs(S.closingDeadline - deadline) > 400) S.closingDeadline = deadline;
@@ -659,6 +703,14 @@
   setInterval(() => {
     const el = app.querySelector('.countdown');
     if (el) el.textContent = String(Math.ceil(closingLeft() / 1000));
+    const secs = app.querySelector('.turn-secs');
+    if (secs) {
+      const left = turnLeft();
+      secs.textContent = `${Math.ceil(left / 1000)}s`;
+      secs.classList.toggle('low', left <= 3000);
+      const fill = app.querySelector('.turn-fill');
+      if (fill) { fill.style.width = `${turnPct()}%`; fill.classList.toggle('low', left <= 3000); }
+    }
   }, 200);
 
   // ---------- clicks ----------
@@ -699,6 +751,7 @@
       return render();
     }
     if (d === 'skip') { S.selected = []; return act('skip_power'); }
+    if (d === 'done') return act('done_sticking');
     if (d === 'cambio') {
       if (!confirming('cambio')) return askToConfirm('cambio');
       S.confirm = null;
