@@ -56,6 +56,7 @@ Open two browser windows (or one normal and one private window) to play against 
 - Play to a target (private rooms): off, 50 or 100 points. Once anyone reaches it, the lowest total wins the match; the next game starts a new match.
 - In every game: emoji reactions (😀 button in the corner), stick reaction times, and a round replay (step through every move with all cards face up).
 - Bots (private rooms): the host adds computer players in the lobby. `server/bots.js` plays fair (only cards it has seen plus the discard pile), counts cards, and looks ahead before big choices by playing out many imagined rounds. Its habits are tuned by self-play: `node scripts/train-bots.js` updates `server/bot-params.json`.
+- Achievements (23): the server awards them during a round (`Game.award`, `roundAchievements`, plus streaks and matches in `rooms.recordResults`); the client saves them per device and lists them under 🏆 Achievements on the main screen.
 - Rejoin: the main screen offers to rejoin the last room you were in (you keep your seat and cards).
 - Looks: 4 card backs and 4 table colours on the main screen, saved per device.
 - After the final turn, the sticking window lasts as long as the turn timer, or ends sooner once everyone presses "No more sticks". With no timer, it ends when everyone has pressed it.

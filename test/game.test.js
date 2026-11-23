@@ -604,3 +604,42 @@ test('no cards left: Cambrio is called automatically on your turn', () => {
   assert.ok(g.log.some((l) => /no cards left/.test(l.text)));
   assert.strictEqual(g.current().id, 'b');
 });
+
+test('achievements: sticks, calls and how the round ends', () => {
+  const g = twoPlayer([C('9', 'H'), C('2', 'H')], [
+    [C('JOKER', null), C('JOKER', null), C('K', 'H'), C('K', 'D')],
+    [C('5'), C('6'), C('7'), C('8')],
+  ]);
+  // Bob sticks wrongly, then Ann calls Cambrio on her first turn with -2.
+  g.discard.push(C('3', 'C'));
+  g.act('b', { type: 'stick', slot: 0 });
+  g.act('a', { type: 'call_cambio' });
+  g.act('b', { type: 'draw_deck' });
+  g.act('b', { type: 'discard' });
+  if (g.stage === 'power') g.act('b', { type: 'skip_power' });
+  endWindow(g);
+  const a = g.view('a').earned;
+  for (const id of ['firstwin', 'boldcall', 'lightning', 'belowzero', 'perfect']) assert.ok(a.includes(id), id);
+  assert.ok(!a.includes('comeback')); // Ann was winning when she called
+  const b = g.view('b').earned;
+  assert.ok(b.includes('butterfingers'));
+  assert.ok(!b.includes('firstwin'));
+});
+
+test('achievements: hat trick and champion come from the room', () => {
+  const rooms = require('../server/rooms');
+  const room = rooms.createRoom();
+  rooms.joinRoom(room.code, { playerId: 'h', name: 'Host' });
+  rooms.joinRoom(room.code, { playerId: 'g', name: 'Guest' });
+  rooms.setTargetScore(room.code, 'h', 50);
+  for (let r = 0; r < 3; r++) {
+    rooms.startGame(room.code, 'h');
+    room.game.finish();
+    room.game.results.winners = ['h'];
+    room.game.results.scores.forEach((s) => { s.score = s.id === 'h' ? 0 : 20; });
+    rooms.recordResults(room);
+  }
+  const earned = room.game.view('h').earned;
+  assert.ok(earned.includes('hattrick'));
+  assert.ok(earned.includes('champion')); // Guest reached 60, so the lowest total wins
+});

@@ -154,6 +154,7 @@ function imagine(game, botId, rng) {
   g.doneSticking = new Set(game.doneSticking);
   g.awaiting = new Set();
   g.log = []; g.history = null; g.fx = [];
+  g.earned = null; g.stats = new Map(); // achievements are for real games only
   g.rng = rng;
   const t = game.now();
   g.now = () => t;
