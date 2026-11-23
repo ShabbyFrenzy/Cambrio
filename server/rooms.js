@@ -146,7 +146,6 @@ function setOption(code, byPlayerId, key, value) {
   if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
   if (!OPTIONS.includes(key)) throw new RoomError('Unknown option');
   room.options = { ...room.options, [key]: !!value };
-  if (key === 'bots' && !value) room.players = room.players.filter((p) => !p.bot);
 }
 
 function setTargetScore(code, byPlayerId, value) {
@@ -166,7 +165,7 @@ function addBot(code, byPlayerId) {
   const room = getRoom(code);
   if (!room) throw new RoomError('Room not found');
   if (room.hostId !== byPlayerId) throw new RoomError('Only the host can add bots');
-  if (room.isPublic || !room.options.bots) throw new RoomError('Turn on the Bots option first');
+  if (room.isPublic) throw new RoomError('Bots can only join private rooms');
   if (room.game && room.game.phase !== 'ended') throw new RoomError('Wait for this game to finish');
   if (room.players.length >= room.maxPlayers) throw new RoomError('This room is full');
   let n = 1;
@@ -210,10 +209,20 @@ function recordResults(room) {
     const p = room.players.find((x) => x.playerId === id);
     if (p) p.wins++;
   }
+  // Room-level achievements: win streaks and beating a table full of bots.
+  const bots = room.players.filter((p) => p.bot && g.players.some((gp) => gp.id === p.playerId)).length;
+  for (const p of room.players) {
+    if (!g.players.some((gp) => gp.id === p.playerId)) continue;
+    const won = g.results.winners.includes(p.playerId);
+    p.streak = won ? (p.streak || 0) + 1 : 0;
+    if (p.streak >= 3) g.award(p.playerId, 'hattrick');
+    if (won && !p.bot && bots >= 7) g.award(p.playerId, 'botbeater');
+  }
   // Match to a target score: once anyone reaches it, the lowest total wins.
   if (room.targetScore && room.players.some((p) => p.totalScore >= room.targetScore)) {
     const low = Math.min(...room.players.map((p) => p.totalScore));
     room.matchOver = { winners: room.players.filter((p) => p.totalScore === low).map((p) => p.playerId) };
+    for (const id of room.matchOver.winners) g.award(id, room.targetScore >= 100 ? 'ultimate' : 'champion');
   }
 }
 

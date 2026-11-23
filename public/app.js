@@ -113,6 +113,7 @@
 
   socket.on('state', (room) => {
     const g = room.game;
+    if (g && g.earned && g.earned.length) noteEarned(g.earned);
     const fx = g && g.fx;
     let events = [];
     if (fx) {
@@ -489,6 +490,7 @@
         ${lastRoom ? `<div class="box rejoin"><span>You were in room <b>${esc(lastRoom)}</b>.</span><button class="primary small" type="button" data-do="rejoin">Rejoin</button></div>` : ''}
         <div class="home-links">
           <button class="secondary" type="button" data-do="tutorial">📖 How to play (tutorial)</button>
+          <button class="secondary" type="button" data-do="achievements">🏆 Achievements · ${Object.keys(unlocked()).filter((k) => ACH_BY_ID[k]).length}/${ACHIEVEMENTS.length}</button>
         </div>
         <div class="box customise">
           <h3>Customise</h3>
@@ -501,6 +503,7 @@
     app.querySelectorAll('[data-do="setback"]').forEach((b) => { b.onclick = () => { setLook('back', b.dataset.v); renderHome(codeInput.value); }; });
     app.querySelectorAll('[data-do="settable"]').forEach((b) => { b.onclick = () => { setLook('table', b.dataset.v); renderHome(codeInput.value); }; });
     app.querySelector('[data-do="tutorial"]').onclick = () => openTutorial();
+    app.querySelector('[data-do="achievements"]').onclick = () => openAchievements();
     const rejoinBtn = app.querySelector('[data-do="rejoin"]');
     if (rejoinBtn) rejoinBtn.onclick = () => { const n = nameInput.value.trim() || store.get('cambioName') || 'Player'; joinRoom(lastRoom, n).then((res) => { if (!res) { store.set('cambrioLastRoom', ''); renderHome(); } }); };
     const nameInput = document.getElementById('nameInput');
@@ -555,7 +558,7 @@
                 ${room.round > 0 ? `<span class="meta">${p.wins} win${p.wins === 1 ? '' : 's'} · ${p.totalScore} pts</span>` : ''}
               </li>`).join('')}
           </ul>
-          ${isHost && room.options && room.options.bots && !room.isPublic
+          ${isHost && !room.isPublic
             ? `<button class="secondary small add-bot" data-do="addbot" ${room.players.length >= room.maxPlayers ? 'disabled' : ''}>+ Add a bot</button>` : ''}
           <div class="option-row">
             <span class="muted">Cards each</span>
@@ -630,11 +633,6 @@
     ['remember', 'Photographic memory', 'Cards you have seen stay face up for you.'],
     ['notes', 'Card notes', "Mark what a card is or isn't, and who knows it."],
     ['counter', 'Card counter', "See how many of each card haven't been discarded."],
-    ['tracker', 'Score tracker', 'Adds up the cards in your hand that you can see or have noted.'],
-    ['reactions', 'Emoji reactions', 'Send a quick emoji that floats up from your seat.'],
-    ['stickTime', 'Stick reaction time', 'Shows how fast each correct stick was.'],
-    ['replay', 'Round replay', 'Watch the round again, every card face up, once it ends.'],
-    ['bots', 'Bots', 'The host can add computer players to fill seats.'],
   ];
   const REACTIONS = ['😂', '😮', '😡', '👏', '😭', '🔥'];
   const opt = (g, k) => !!(g.options && g.options[k]);
@@ -751,30 +749,7 @@
         <div class="seat-head"><span class="dot ${p.connected ? '' : 'off'}"></span>${esc(isMe ? `${p.name} (you)` : p.name)}${p.connected ? '' : ' <span class="muted">· away</span>'} ${tags.join('')}${timerOn ? `<span class="turn-secs">${Math.ceil(turnLeft() / 1000)}s</span>` : ''}</div>
         <div class="hand ${cols}">${cards}</div>
         <div class="turn-bar ${timerOn ? '' : 'off'}"><div class="turn-fill" style="width:${timerOn ? turnPct() : 0}%"></div></div>
-        ${isMe && g.phase !== 'ended' && opt(g, 'tracker') ? trackerHtml(g, p) : ''}
       </div>`;
-  }
-
-  // Score tracker: adds up the cards in your hand that you can see or have noted
-  // with a single "is", so you can judge when to call Cambrio.
-  const RANK_VALUE = { 'K-red': -1, JOKER: 0, A: 1, J: 11, Q: 12, 'K-black': 13 };
-  function valueOfCard(c) {
-    if (c.rank === 'K') return c.suit === 'H' || c.suit === 'D' ? -1 : 13;
-    return c.rank in RANK_VALUE ? RANK_VALUE[c.rank] : Number(c.rank);
-  }
-  function trackerHtml(g, p) {
-    const parts = p.slots.filter(Boolean).map((c) => {
-      if (!c.hidden) return { v: valueOfCard(c) };
-      if (c.note && c.note.is && c.note.is.length === 1) return { v: RANK_VALUE[c.note.is[0]] ?? Number(c.note.is[0]), noted: true };
-      return null;
-    });
-    const known = parts.filter(Boolean);
-    const unknown = parts.length - known.length;
-    const sum = known.reduce((t, x) => t + x.v, 0);
-    const terms = parts.map((x) => (x ? `<b class="${x.noted ? 'noted' : ''}">${x.v}</b>` : '<span class="q">?</span>')).join(' + ');
-    const tail = unknown === parts.length ? 'nothing known yet'
-      : `= <b>${sum}</b>${unknown ? ` + ${unknown} unknown` : ''}`;
-    return `<div class="tracker" aria-label="Your known total">Your cards: ${terms} ${tail}</div>`;
   }
 
   function promptHtml(g, me) {
@@ -967,7 +942,7 @@
           ${totals}
           ${g.phase !== 'ended' ? `<button class="ghost small" data-do="leave">${confirming('leave') ? 'Tap again to leave' : 'Leave room'}</button>` : ''}
         </aside>
-        ${opt(g, 'reactions') && myIdx !== -1 ? `<div class="react-box ${S.reactOpen ? 'open' : ''}">
+        ${myIdx !== -1 ? `<div class="react-box ${S.reactOpen ? 'open' : ''}">
           ${S.reactOpen ? `<div class="react-pick">${REACTIONS.map((e) => `<button data-do="emoji" data-emoji="${e}" aria-label="Send ${e}">${e}</button>`).join('')}</div>` : ''}
           <button class="react-btn" data-do="react" aria-label="Send a reaction" aria-expanded="${!!S.reactOpen}">😀</button>
         </div>` : ''}
@@ -1259,8 +1234,84 @@
     ['Calling Cambrio', `<p>Think you're lowest? Press <b>Call Cambrio</b> instead of drawing. Everyone else gets one last turn, then there's a last chance to stick, and all cards are shown.</p>
       <p>The caller wins ties.</p>`],
     ["You're ready!", `<p>Selecting: tap a card, or hold and drag across several. The full rules are always under <b>Rules</b> at the top.</p>
-      <p>Private rooms have extra options like notes, a score tracker, emoji reactions and bots.</p>`],
+      <p>Private rooms can add bots and turn on extra help like card notes. Every game has emoji reactions, stick times and a round replay.</p>`],
   ];
+  // ---------- achievements ----------
+  // Earned in games (the server decides), kept on this device like the card back.
+  const ACHIEVEMENTS = [
+    ['firstwin', '🥇', 'First win', 'Win your first game.'],
+    ['odds', '🎲', 'Against the odds', 'Win with a score above 25.'],
+    ['loneking', '♚', 'Lone king', 'Win with only 1 card left, and it is a black king.'],
+    ['belowzero', '🥶', 'Below zero', 'Win with exactly −2.'],
+    ['perfect', '💎', 'Perfect hand', 'Win with 4 cards: 2 jokers and 2 red kings.'],
+    ['bighand', '🖐️', 'Full house', 'Win with 5 or more cards.'],
+    ['empty', '🫥', 'Empty handed', 'Lose all your cards.'],
+    ['quickdraw', '⚡', 'Quick draw', 'A correct stick in under 1 second.'],
+    ['sticky', '🍯', 'Sticky fingers', '3 correct sticks in one round.'],
+    ['pickpocket', '🧤', 'Pickpocket', "Stick someone else's card."],
+    ['butterfingers', '🧈', 'Butterfingers', 'Make a wrong stick.'],
+    ['boldcall', '📣', 'Bold call', 'Call Cambrio and win.'],
+    ['calledout', '🙈', 'Called out', 'Call Cambrio and lose.'],
+    ['comeback', '🔄', 'Comeback call', 'Call Cambrio while losing, and end up winning.'],
+    ['lightning', '🌩️', 'Lightning', 'Call Cambrio on your first turn and win.'],
+    ['tiebreak', '🤝', 'Tie breaker', 'Win a tie because you called Cambrio.'],
+    ['zero', '0️⃣', 'Zero hero', 'Finish a round with exactly 0.'],
+    ['hoarder', '🐿️', 'Hoarder', 'Finish a round holding 10 or more cards.'],
+    ['double', '👑', 'Double trouble', 'Finish holding both black kings.'],
+    ['hattrick', '🎩', 'Hat trick', 'Win 3 rounds in a row in one room.'],
+    ['champion', '🏆', 'Champion', 'Win a match to 50 points.'],
+    ['ultimate', '🌟', 'Ultimate champion', 'Win a match to 100 points.'],
+    ['botbeater', '🤖', 'Bot beater', 'Win a round against 7 bots.'],
+  ];
+  const ACH_BY_ID = Object.fromEntries(ACHIEVEMENTS.map((a) => [a[0], a]));
+  function unlocked() {
+    try { return JSON.parse(store.get('cambrioAchievements') || '{}') || {}; } catch { return {}; }
+  }
+  /** Saves any newly earned achievements and pops each one up. */
+  function noteEarned(ids) {
+    const have = unlocked();
+    const fresh = (ids || []).filter((id) => ACH_BY_ID[id] && !have[id]);
+    if (!fresh.length) return;
+    for (const id of fresh) have[id] = Date.now();
+    store.set('cambrioAchievements', JSON.stringify(have));
+    S.achQueue = (S.achQueue || []).concat(fresh);
+    if (!S.achShowing) showNextAchievement();
+  }
+  function showNextAchievement() {
+    const id = (S.achQueue || []).shift();
+    if (!id) { S.achShowing = false; return; }
+    S.achShowing = true;
+    const [, icon, name, desc] = ACH_BY_ID[id];
+    const el = document.createElement('div');
+    el.className = 'ach-pop';
+    el.setAttribute('role', 'status');
+    el.innerHTML = `<span class="ach-icon">${icon}</span><span><small>Achievement unlocked</small><b>${esc(name)}</b><em>${esc(desc)}</em></span>`;
+    document.body.appendChild(el);
+    const done = () => { el.remove(); showNextAchievement(); };
+    if (REDUCED_MOTION) { setTimeout(done, 3200); return; }
+    el.animate([{ transform: 'translate(-50%,-140%)', opacity: 0 }, { transform: 'translate(-50%,0)', opacity: 1, offset: 0.12 },
+      { transform: 'translate(-50%,0)', opacity: 1, offset: 0.88 }, { transform: 'translate(-50%,-140%)', opacity: 0 }],
+    { duration: 3400, easing: 'ease-out', fill: 'forwards' }).finished.then(done);
+  }
+  function openAchievements() {
+    let dlg = document.getElementById('achDialog');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'achDialog';
+      document.body.appendChild(dlg);
+      dlg.addEventListener('click', (e) => { if (e.target === dlg || e.target.closest('[data-a=close]')) dlg.close(); });
+    }
+    const have = unlocked();
+    const count = ACHIEVEMENTS.filter(([id]) => have[id]).length;
+    dlg.innerHTML = `<div class="rules ach-list">
+      <h2>Achievements <small class="muted">${count} of ${ACHIEVEMENTS.length}</small></h2>
+      <p class="muted">Saved on this device. Earn them in any game, quick play or private.</p>
+      <ul>${ACHIEVEMENTS.map(([id, icon, name, desc]) => `<li class="${have[id] ? 'got' : 'locked'}"><span class="ach-icon">${have[id] ? icon : '🔒'}</span><span><b>${esc(name)}</b><small>${esc(desc)}</small></span></li>`).join('')}</ul>
+      <div class="tut-nav"><button class="primary small" data-a="close">Close</button></div>
+    </div>`;
+    dlg.showModal();
+  }
+
   function openTutorial(i = 0) {
     let dlg = document.getElementById('tutorialDialog');
     if (!dlg) {

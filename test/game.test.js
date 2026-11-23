@@ -444,7 +444,7 @@ test('rooms: options are host-only and passed to the game', () => {
   assert.throws(() => rooms.setOption(room.code, 'h', 'silly', true));
   rooms.setOption(room.code, 'h', 'notes', true);
   rooms.setOption(room.code, 'h', 'remember', true);
-  const want = { remember: true, notes: true, counter: false, tracker: false, reactions: false, stickTime: false, replay: false, bots: false };
+  const want = { remember: true, notes: true, counter: false };
   assert.deepStrictEqual(rooms.view(room).options, want);
   assert.deepStrictEqual(rooms.startGame(room.code).options, want);
 });
@@ -541,7 +541,7 @@ test('bots: three bots can play a whole round on their own', () => {
   for (let seed = 1; seed <= 20; seed++) {
     let r = seed;
     const rng = () => ((r = (r * 16807) % 2147483647) / 2147483647);
-    const g = new Game([{ id: 'a', name: 'Bot 1' }, { id: 'b', name: 'Bot 2' }, { id: 'c', name: 'Bot 3' }], { rng, options: { replay: true, stickTime: true } });
+    const g = new Game([{ id: 'a', name: 'Bot 1' }, { id: 'b', name: 'Bot 2' }, { id: 'c', name: 'Bot 3' }], { rng });
     let steps = 0;
     while (g.phase !== 'ended' && steps < 3000) {
       const move = ['a', 'b', 'c'].map((id) => ({ id, a: decide(g, id) })).find((m) => m.a);
@@ -559,8 +559,6 @@ test('rooms: bots, target score and match over', () => {
   const rooms = require('../server/rooms');
   const room = rooms.createRoom();
   rooms.joinRoom(room.code, { playerId: 'h', name: 'Host' });
-  assert.throws(() => rooms.addBot(room.code, 'h'), /Bots option/);
-  rooms.setOption(room.code, 'h', 'bots', true);
   const bot = rooms.addBot(room.code, 'h');
   assert.strictEqual(bot.name, 'Bot 1');
   rooms.setTargetScore(room.code, 'h', 50);
@@ -575,8 +573,73 @@ test('rooms: bots, target score and match over', () => {
   assert.strictEqual(room.players[0].totalScore, 0);
   assert.strictEqual(rooms.view(room, 'h').matchOver, null);
   room.game.finish();
-  rooms.setOption(room.code, 'h', 'bots', false);
+  rooms.removeBot(room.code, 'h', bot.playerId);
   assert.strictEqual(room.players.length, 1);
   rooms.leaveRoom(room.code, 'h');
   assert.strictEqual(rooms.getRoom(room.code), null);
+});
+
+test('bots: the look-ahead bot only uses cards it could know about', () => {
+  const { decide } = require('../server/bots');
+  const g = new Game([{ id: 'a', name: 'Bot' }, { id: 'b', name: 'Bob' }]);
+  g.act('a', { type: 'ready' }); g.act('b', { type: 'ready' });
+  const before = JSON.stringify(g.players.map((p) => p.hand)) + JSON.stringify(g.deck);
+  const a = decide(g, 'a');
+  assert.ok(['draw_deck', 'call_cambio'].includes(a.type));
+  // Imagining futures must never change the real game.
+  assert.strictEqual(JSON.stringify(g.players.map((p) => p.hand)) + JSON.stringify(g.deck), before);
+  assert.strictEqual(g.log.length, 2);
+});
+
+test('no cards left: Cambrio is called automatically on your turn', () => {
+  const g = twoPlayer([C('9', 'H'), C('2', 'H')]);
+  // Ann sticks away all four of her cards (rigging the pile to match each one).
+  for (let s = 0; s < 4; s++) {
+    g.discard.push({ ...g.players[0].hand[s], id: `copy${s}` });
+    g.act('a', { type: 'stick', slot: s });
+  }
+  assert.ok(g.players[0].hand.every((c) => !c));
+  // It is still Ann's turn to draw, so Cambrio is called for her straight away.
+  assert.strictEqual(g.cambioBy, 'a');
+  assert.ok(g.log.some((l) => /no cards left/.test(l.text)));
+  assert.strictEqual(g.current().id, 'b');
+});
+
+test('achievements: sticks, calls and how the round ends', () => {
+  const g = twoPlayer([C('9', 'H'), C('2', 'H')], [
+    [C('JOKER', null), C('JOKER', null), C('K', 'H'), C('K', 'D')],
+    [C('5'), C('6'), C('7'), C('8')],
+  ]);
+  // Bob sticks wrongly, then Ann calls Cambrio on her first turn with -2.
+  g.discard.push(C('3', 'C'));
+  g.act('b', { type: 'stick', slot: 0 });
+  g.act('a', { type: 'call_cambio' });
+  g.act('b', { type: 'draw_deck' });
+  g.act('b', { type: 'discard' });
+  if (g.stage === 'power') g.act('b', { type: 'skip_power' });
+  endWindow(g);
+  const a = g.view('a').earned;
+  for (const id of ['firstwin', 'boldcall', 'lightning', 'belowzero', 'perfect']) assert.ok(a.includes(id), id);
+  assert.ok(!a.includes('comeback')); // Ann was winning when she called
+  const b = g.view('b').earned;
+  assert.ok(b.includes('butterfingers'));
+  assert.ok(!b.includes('firstwin'));
+});
+
+test('achievements: hat trick and champion come from the room', () => {
+  const rooms = require('../server/rooms');
+  const room = rooms.createRoom();
+  rooms.joinRoom(room.code, { playerId: 'h', name: 'Host' });
+  rooms.joinRoom(room.code, { playerId: 'g', name: 'Guest' });
+  rooms.setTargetScore(room.code, 'h', 50);
+  for (let r = 0; r < 3; r++) {
+    rooms.startGame(room.code, 'h');
+    room.game.finish();
+    room.game.results.winners = ['h'];
+    room.game.results.scores.forEach((s) => { s.score = s.id === 'h' ? 0 : 20; });
+    rooms.recordResults(room);
+  }
+  const earned = room.game.view('h').earned;
+  assert.ok(earned.includes('hattrick'));
+  assert.ok(earned.includes('champion')); // Guest reached 60, so the lowest total wins
 });

@@ -1,0 +1,16 @@
+{
+  "keepMargin": -0.5,
+  "powerValue": 1.5,
+  "swapGain": 1,
+  "blindGain": 2,
+  "cambioMax": 4,
+  "cambioLead": 0,
+  "ownUnknownRisk": 2,
+  "oppUnknownBias": 0,
+  "stickOthers": true,
+  "peekLeader": true,
+  "cambioKnownMax": 6,
+  "lookahead": 40,
+  "lookRange": 4,
+  "thinkMs": 80
+}

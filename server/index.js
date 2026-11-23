@@ -262,8 +262,7 @@ io.on('connection', (socket) => {
   // Emoji reactions (private rooms with the option on). A few per second at most.
   socket.on('react', safe(socket, ({ emoji }) => {
     const room = currentRoom(socket);
-    if (room.isPublic || !room.options.reactions) throw new rooms.RoomError('Reactions are off');
-    if (!REACTIONS.includes(emoji)) throw new rooms.RoomError('Unknown reaction');
+        if (!REACTIONS.includes(emoji)) throw new rooms.RoomError('Unknown reaction');
     const now = Date.now();
     if (now - (socket.data.lastReact || 0) < 700) return {};
     socket.data.lastReact = now;

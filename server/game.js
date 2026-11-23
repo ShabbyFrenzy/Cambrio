@@ -37,13 +37,8 @@ const MAX_PLAYERS = 8;
 //   remember: cards you have seen stay face up for you.
 //   notes:    you can mark cards with what they are/aren't and who knows them.
 //   counter:  shows how many of each card have not been discarded yet.
-//   tracker:  adds up the cards in your hand that you can see or have noted (shown by the client).
-//   reactions: emoji reactions (handled by the server sockets).
-//   stickTime: shows how fast a right stick was.
-//   replay:   keeps a step-by-step history of the round to watch at the end.
-//   bots:     the host can add computer players (handled by rooms and server/bots.js).
-// hard: you can write notes on cards and see which cards have not been discarded yet.
-const OPTIONS = ['remember', 'notes', 'counter', 'tracker', 'reactions', 'stickTime', 'replay', 'bots'];
+// Always on: emoji reactions, stick times, the round replay, and bots in private rooms.
+const OPTIONS = ['remember', 'notes', 'counter'];
 // Lowest to highest value: red K (-1), Joker (0), A ... Q, black K (13).
 const NOTE_RANKS = ['K-red', 'JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-black'];
 
@@ -155,6 +150,9 @@ class Game {
     this.fx = []; // animation events for the latest action (see view())
     this.fxSeq = 0;
     this.awaiting = new Set(); // players the peek phase waits for (matchmade rooms)
+    // Achievements earned this round (ids, see public/app.js ACHIEVEMENTS), and what they need.
+    this.earned = new Map(this.players.map((p) => [p.id, new Set()]));
+    this.stats = new Map(this.players.map((p) => [p.id, { turns: 0, sticks: 0, callFirstTurn: false, callLosing: false }]));
     for (const p of this.players) {
       this.known.set(p.id, new Set(this.peekSlots.map((i) => p.hand[i]).filter(Boolean)));
       this.notes.set(p.id, new Map());
@@ -182,7 +180,7 @@ class Game {
 
   // Replay: a face-up picture of the table after each logged event.
   snapshot(text) {
-    if (!this.options || !this.options.replay || !this.players) return;
+    if (!this.history || !this.players || this.history.length >= 600) return;
     const plain = (c) => (c ? { rank: c.rank, suit: c.suit } : null);
     this.history.push({
       text,
@@ -267,6 +265,8 @@ class Game {
     }
     this.fx = [];
     const out = handler.call(this, pid, action) || {};
+    this.checkEmpty();
+    this.autoCambio(); // e.g. someone stuck their last card on their own turn
     this.seq++;
     if (this.fx.length) this.fxSeq++;
     return { reveals: out.reveals || [] };
@@ -438,6 +438,13 @@ class Game {
   callCambio(pid) {
     this.requireTurn(pid, 'draw');
     if (this.cambioBy) throw new GameError('Cambrio has already been called');
+    const st = this.stats.get(pid);
+    if (st) {
+      st.callFirstTurn = st.turns === 0;
+      const total = (p) => p.hand.filter(Boolean).reduce((t, c) => t + cardValue(c), 0);
+      const mine = total(this.player(pid));
+      st.callLosing = this.players.some((p) => p.id !== pid && total(p) < mine);
+    }
     this.cambioBy = pid;
     this.turnsLeft = this.players.length - 1;
     this.fx.push({ kind: 'cambio', by: pid });
@@ -456,11 +463,15 @@ class Game {
     if (!top) throw new GameError('There is nothing to stick on');
     const whose = owner.id === pid ? 'their' : `${owner.name}'s`;
     if (card.rank === top.rank) {
-      const ms = this.options.stickTime ? Math.max(0, this.now() - this.topSince) : null;
+      const ms = Math.max(0, this.now() - this.topSince); // stick reaction time, shown to everyone
       owner.hand[t.slot] = null;
       this.discardCard(card);
       this.fx.push({ kind: 'stick', by: pid, at: { pid: t.pid, slot: t.slot }, card, ok: true, ms });
-      this.addLog(`${p.name} stuck ${whose} card #${t.slot + 1} (${cardLabel(card)}) on the pile!${ms !== null ? ` (${(ms / 1000).toFixed(2)}s)` : ''}`);
+      this.addLog(`${p.name} stuck ${whose} card #${t.slot + 1} (${cardLabel(card)}) on the pile! (${(ms / 1000).toFixed(2)}s)`);
+      const st = this.stats.get(pid);
+      if (st && ++st.sticks >= 3) this.award(pid, 'sticky');
+      if (ms < 1000) this.award(pid, 'quickdraw');
+      if (owner.id !== pid) this.award(pid, 'pickpocket');
       if (owner.id !== pid && p.hand.some(Boolean)) {
         this.pendingGive[pid] = { to: owner.id, slot: t.slot };
         if (this.pauseStart === null) this.pauseStart = this.now();
@@ -470,6 +481,7 @@ class Game {
     }
     // Wrong: the card goes back where it was and the sticker takes a penalty card.
     const penalty = this.drawFromDeck();
+    this.award(pid, 'butterfingers');
     this.learnAll(card); // it was shown to the whole table before going back
     this.fx.push({ kind: 'stick', by: pid, at: { pid: t.pid, slot: t.slot }, card, ok: false });
     if (penalty) {
@@ -536,11 +548,14 @@ class Game {
     this.addLog(`${p.name} gave their card #${slot + 1} to ${to.name}, as ${to.name}'s card #${toSlot + 1}.`);
     if (!Object.keys(this.pendingGive).length) this.endPause();
     if (this.stage === 'closing') this.tryFinish();
+    this.autoCambio();
     return {};
   }
 
   // ---------- turn flow ----------
   endTurn() {
+    const st = this.stats && this.phase === 'play' && this.stats.get(this.current().id);
+    if (st) st.turns++;
     this.drawn = null;
     this.drawnFrom = null;
     this.power = null;
@@ -552,6 +567,53 @@ class Game {
     this.turn = (this.turn + 1) % this.players.length;
     this.skipDisconnected();
     if (this.phase === 'play' && this.stage !== 'closing') this.startTurnClock();
+    this.autoCambio();
+  }
+
+  award(pid, id) {
+    const set = this.earned && this.earned.get(pid);
+    if (set) set.add(id);
+  }
+
+  checkEmpty() {
+    if (this.phase === 'peek') return;
+    for (const p of this.players) if (p.hand.length && !p.hand.some(Boolean)) this.award(p.id, 'empty');
+  }
+
+  /** Achievements decided by how the round ended. */
+  roundAchievements() {
+    const { scores, winners, tieBreak } = this.results;
+    for (const s of scores) {
+      const p = this.players.find((x) => x.id === s.id);
+      if (!p) continue;
+      const cards = p.hand.filter(Boolean);
+      const won = winners.includes(s.id);
+      const st = this.stats.get(s.id) || {};
+      if (s.score === 0) this.award(s.id, 'zero');
+      if (cards.length >= 10) this.award(s.id, 'hoarder');
+      if (cards.filter((c) => c.rank === 'K' && !isRed(c)).length >= 2) this.award(s.id, 'double');
+      if (this.cambioBy === s.id) this.award(s.id, won ? 'boldcall' : 'calledout');
+      if (!won) continue;
+      this.award(s.id, 'firstwin');
+      if (s.score > 25) this.award(s.id, 'odds');
+      if (cards.length === 1 && cards[0].rank === 'K' && !isRed(cards[0])) this.award(s.id, 'loneking');
+      if (s.score === -2) this.award(s.id, 'belowzero');
+      if (cards.length === 4 && cards.filter((c) => c.rank === 'JOKER').length === 2 && cards.filter((c) => c.rank === 'K' && isRed(c)).length === 2) this.award(s.id, 'perfect');
+      if (cards.length >= 5) this.award(s.id, 'bighand');
+      if (this.cambioBy === s.id && st.callFirstTurn) this.award(s.id, 'lightning');
+      if (this.cambioBy === s.id && st.callLosing) this.award(s.id, 'comeback');
+      if (tieBreak === 'cambio' && this.cambioBy === s.id) this.award(s.id, 'tiebreak');
+    }
+  }
+
+  /** A player with no cards left calls Cambrio automatically when it's their turn to draw. */
+  autoCambio() {
+    if (this.phase !== 'play' || this.stage !== 'draw' || this.cambioBy) return;
+    if (Object.keys(this.pendingGive).length) return; // wait until any owed card is given
+    const p = this.current();
+    if (!p || p.hand.some(Boolean)) return;
+    this.addLog(`${p.name} has no cards left, so Cambrio is called for them.`);
+    this.callCambio(p.id);
   }
 
   startTurnClock() {
@@ -757,6 +819,8 @@ class Game {
     }
     const winners = tied.map((s) => s.id);
     this.results = { scores, winners, tieBreak };
+    this.checkEmpty();
+    this.roundAchievements();
     const names = winners.map((id) => this.name(id)).join(' & ');
     this.addLog(`Game over! ${names} win${winners.length === 1 ? 's' : ''} with ${best} point${best === 1 ? '' : 's'}.`);
   }
@@ -831,7 +895,8 @@ class Game {
       paused: this.pauseStart !== null,
       doneSticking: [...this.doneSticking],
       results: this.results,
-      replay: ended && this.options.replay ? this.history : null,
+      earned: this.earned && this.earned.has(pid) ? [...this.earned.get(pid)] : [],
+      replay: ended ? this.history : null,
       log: this.log.slice(-40),
       youAreIn: !!me,
     };

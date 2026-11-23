@@ -326,12 +326,8 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 .game-options label.toggle input { flex: none; }
 .game-options label.toggle span { display: block; }
 
-/* Score tracker under your hand; the timer bar keeps its space so nothing jumps */
+/* The timer bar keeps its space so nothing jumps */
 .turn-bar.off { visibility: hidden; }
-.tracker { margin-top: 6px; font-size: 13px; color: var(--muted); text-align: center; }
-.tracker b { color: var(--ink); }
-.tracker b.noted { color: #4cd187; }
-.tracker .q { color: rgba(255,255,255,.45); }
 
 /* King suit symbols in notes, chips and the counter */
 .ks { font-size: 1.3em; line-height: 0; vertical-align: -0.08em; margin-left: 1px; }
@@ -422,3 +418,22 @@ dialog .ghost { color: #1d2330; border: 1px solid rgba(29,35,48,.35); }
 dialog .muted { color: #5d6472; }
 .replay input[type=range] { width: 100%; margin: 12px 0 6px; }
 .replay-controls { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+
+/* ---------- achievements ---------- */
+.ach-pop { position: fixed; top: 12px; left: 50%; transform: translate(-50%, 0); z-index: 80; display: flex; gap: 12px; align-items: center;
+  background: #1d2330; color: #f4f1e8; border: 2px solid #ffd35c; border-radius: 14px; padding: 10px 16px; box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  max-width: calc(100% - 32px); pointer-events: none; }
+.ach-pop .ach-icon { font-size: 30px; }
+.ach-pop small { display: block; color: #ffd35c; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+.ach-pop b { display: block; font-size: 16px; }
+.ach-pop em { display: block; font-style: normal; font-size: 13px; opacity: .8; }
+.ach-list ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.ach-list li { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: #ebe6d8; }
+.ach-list li.locked { opacity: .55; }
+.ach-list li.got { background: #fff3c4; box-shadow: inset 0 0 0 2px #e8b923; }
+.ach-list .ach-icon { font-size: 24px; flex: none; width: 30px; text-align: center; }
+.ach-list b { display: block; font-size: 14px; }
+.ach-list small { display: block; font-size: 12px; color: #5d6472; }
+.ach-list h2 small { font-size: 14px; font-weight: 500; }
+#achDialog { max-width: 720px; }
+.home-links { flex-wrap: wrap; gap: 8px; }
