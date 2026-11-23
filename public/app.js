@@ -561,7 +561,11 @@
     const revealedFromPower = (g.power && g.power.revealed) || [];
     const cols = p.slots.length > 4 ? 'wide' : '';
     const selectable = g.phase === 'play' && g.players.some((x) => x.id === me);
-    const cards = p.slots.map((c, slot) => {
+    // Opponents' hands are turned round, as if you sat across the table from them:
+    // their bottom row (the one they peeked at) is the top row from where you sit.
+    const order = p.slots.map((_, i) => i);
+    if (!isMe) order.reverse();
+    const cards = order.map((slot) => [p.slots[slot], slot]).map(([c, slot]) => {
       let card = c;
       let revealed = false;
       const r = S.reveals.get(`${p.id}:${slot}`);
