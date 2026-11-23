@@ -491,3 +491,20 @@ body.ingame .topbar, body.ingame header { background: rgba(0,0,0,.35); }
   .ring .seat:not(.me) { padding: 8px 10px 10px; }
   .ring .mid:has(.results) { z-index: 5; }
 }
+
+/* Centre the table on wide screens. The log sits to the right only when there is room for it
+   on both sides (very wide screens); otherwise it goes under the table. */
+@media (min-width: 1180px) {
+  .table { grid-template-columns: minmax(0, 1fr); max-width: none; justify-items: center; }
+  .play-area { width: min(1060px, 100%); }
+  /* Seats stick out past the oval, so leave room above and below it. */
+  .ring { height: 760px; margin: 44px 0 110px; } /* scaled to fit short screens by fitTable() in app.js */
+  .side { width: min(1060px, 100%); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; }
+  .side .log { max-height: 260px; }
+}
+@media (min-width: 1640px) {
+  .table { grid-template-columns: 1fr minmax(0, 1060px) 1fr; justify-items: stretch; }
+  .play-area { grid-column: 2; width: auto; }
+  .side { grid-column: 3; width: auto; max-width: 300px; grid-template-columns: 1fr; }
+  .side .log { max-height: 420px; }
+}
