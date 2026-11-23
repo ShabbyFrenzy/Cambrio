@@ -358,16 +358,17 @@ test('turn timer: running out skips the turn and discards a held card', () => {
   g.act('a', { type: 'ready' }); g.act('b', { type: 'ready' });
   assert.strictEqual(g.view('a').turnMsLeft, 10000);
   now = 4000;
-  g.act('a', { type: 'draw_deck' }); // 9H
-  now = 9999;
+  g.act('a', { type: 'draw_deck' }); // 9H, and drawing restarts the timer
+  assert.strictEqual(g.view('a').turnMsLeft, 10000);
+  now = 13999;
   assert.strictEqual(g.checkTurnTimeout(), false);
-  now = 10000;
+  now = 14000;
   assert.strictEqual(g.checkTurnTimeout(), true);
   assert.strictEqual(g.discard.at(-1).rank, '9');
   assert.strictEqual(g.stage, 'draw');
   assert.strictEqual(g.current().id, 'b');
   assert.strictEqual(g.view('b').turnMsLeft, 10000);
-  now = 20000;
+  now = 24000;
   assert.strictEqual(g.checkTurnTimeout(), true); // b did nothing
   assert.strictEqual(g.current().id, 'a');
 });
@@ -381,4 +382,63 @@ test('autoGive hands over a random card when the sticker stalls', () => {
   assert.ok(g.autoGive('a'));
   assert.ok(g.players[1].hand[3]);
   assert.strictEqual(g.view('a').pendingGive, null);
+});
+
+function modeGame(mode, extra, hands) {
+  hands = hands || [[C('A'), C('2'), C('3'), C('4')], [C('5'), C('6'), C('7'), C('8')]];
+  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { deck: rigged(hands, extra), mode });
+  g.act('a', { type: 'ready' }); g.act('b', { type: 'ready' });
+  return g;
+}
+
+test('easy mode: cards you have seen stay face up for you, even after they move', () => {
+  const g = modeGame('easy', [C('9', 'H'), C('2', 'H')]);
+  const shown = (pid, owner) => g.view(pid).players.find((p) => p.id === owner).slots.map((c) => (c.hidden ? '?' : c.rank));
+  assert.deepStrictEqual(shown('a', 'a'), ['?', '?', '3', '4']); // bottom row seen at the start
+  assert.deepStrictEqual(shown('b', 'a'), ['?', '?', '?', '?']);
+  g.act('a', { type: 'draw_deck' }); // 9H
+  g.act('a', { type: 'discard' });
+  g.act('a', { type: 'power_pick', targets: [{ pid: 'b', slot: 0 }] }); // looks at Bob's 5
+  assert.deepStrictEqual(shown('a', 'b'), ['5', '?', '?', '?']);
+  g.act('b', { type: 'draw_deck' }); // 2H
+  g.act('b', { type: 'swap', slot: 0 }); // Bob swaps his 5 out for the 2H he drew
+  assert.deepStrictEqual(shown('b', 'b'), ['2', '?', '7', '8']);
+  assert.deepStrictEqual(shown('a', 'b'), ['?', '?', '?', '?']);
+});
+
+test('normal mode hides seen cards and hard mode keeps notes on cards', () => {
+  const n = modeGame('normal', [C('9', 'H')]);
+  assert.ok(n.view('a').players[0].slots.every((c) => c.hidden));
+  assert.throws(() => n.act('a', { type: 'note', target: { pid: 'b', slot: 0 }, note: { is: ['5'] } }), /hard mode/);
+  assert.strictEqual(n.view('a').unplayed, null);
+
+  const g = modeGame('hard', [C('9', 'H'), C('J', 'H')]);
+  assert.ok(g.view('a').players[0].slots.every((c) => c.hidden));
+  g.act('a', { type: 'note', target: { pid: 'b', slot: 1 }, note: { is: ['6', 'X'], not: ['K', '6'] } });
+  assert.deepStrictEqual(g.view('a').players[1].slots[1].note, { is: ['6'], not: ['K'] });
+  assert.strictEqual(g.view('b').players[1].slots[1].note, undefined); // private
+  // The note follows the card when a J/Q swap moves it.
+  g.act('a', { type: 'draw_deck' }); g.act('a', { type: 'discard' }); // 9H: peek other
+  g.act('a', { type: 'power_pick', targets: [{ pid: 'b', slot: 0 }] });
+  g.act('b', { type: 'draw_deck' }); g.act('b', { type: 'discard' }); // JH: swap
+  g.act('b', { type: 'power_pick', targets: [{ pid: 'b', slot: 1 }, { pid: 'a', slot: 0 }] });
+  assert.deepStrictEqual(g.view('a').players[0].slots[0].note, { is: ['6'], not: ['K'] });
+  // Notes work while the table is paused, and clearing removes them.
+  g.act('a', { type: 'note', target: { pid: 'a', slot: 0 }, note: {} });
+  assert.strictEqual(g.view('a').players[0].slots[0].note, undefined);
+  const left = g.view('a').unplayed;
+  assert.strictEqual(left['9'], undefined); // the only 9 was discarded
+  assert.strictEqual(left.A, 1);
+});
+
+test('rooms: mode is host-only, private only, and passed to the game', () => {
+  const rooms = require('../server/rooms');
+  const room = rooms.createRoom();
+  rooms.joinRoom(room.code, { playerId: 'h', name: 'Host' });
+  rooms.joinRoom(room.code, { playerId: 'g', name: 'Guest' });
+  assert.throws(() => rooms.setMode(room.code, 'g', 'easy'), /host/);
+  assert.throws(() => rooms.setMode(room.code, 'h', 'silly'));
+  rooms.setMode(room.code, 'h', 'hard');
+  assert.strictEqual(rooms.view(room).mode, 'hard');
+  assert.strictEqual(rooms.startGame(room.code).mode, 'hard');
 });

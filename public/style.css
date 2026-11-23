@@ -242,3 +242,28 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
   .code-box .code { font-size: 38px; letter-spacing: 5px; }
   .hero h1 { font-size: 36px; }
 }
+
+/* ---------- easy mode: cards you remember ---------- */
+.card.face.known { box-shadow: 0 0 0 2px rgba(120, 190, 255, .85), 0 2px 6px rgba(0,0,0,.35); }
+
+/* ---------- hard mode: notes and cards left ---------- */
+.card .note {
+  position: absolute; left: 3%; right: 3%; bottom: 4%; z-index: 1;
+  display: flex; flex-wrap: wrap; gap: 2px; justify-content: center;
+  font-style: normal; font-size: calc(var(--card-w) * .17); line-height: 1.1; font-weight: 700;
+}
+.card .note i { font-style: normal; padding: 0 3px; border-radius: 4px; }
+.card .note i.is { background: #4cd187; color: #0b2a1c; }
+.card .note i.not { background: rgba(255,255,255,.88); color: var(--red); text-decoration: line-through; }
+.note-bar { background: var(--panel); border-radius: 12px; padding: 8px 10px; display: grid; gap: 6px; text-align: center; font-size: 14px; }
+.note-bar b.is { color: #4cd187; }
+.note-bar b.not { color: #ff8a7a; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
+.chip { min-width: 36px; padding: 6px 7px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.25); color: var(--ink); font-weight: 700; cursor: pointer; }
+.chip.is { background: #4cd187; color: #0b2a1c; border-color: #4cd187; }
+.chip.not { background: #fff; color: var(--red); text-decoration: line-through; border-color: #fff; }
+.chip.clear { font-weight: 500; }
+.cards-left { display: grid; gap: 8px; }
+.left-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.left-cell { background: var(--panel); border-radius: 8px; padding: 5px 6px; display: flex; justify-content: space-between; gap: 4px; font-size: 13px; }
+.left-cell.gone { opacity: .4; }

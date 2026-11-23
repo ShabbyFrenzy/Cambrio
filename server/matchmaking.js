@@ -72,6 +72,21 @@ class Matchmaker {
     return Math.max(size, this.cfg.minSize);
   }
 
+  // Seconds until a smaller game starts if nobody else joins, or null when that can't happen yet.
+  startsInSec() {
+    const n = this.queue.length;
+    if (n >= this.cfg.idealSize) return 0;
+    const waited = (this.now() - this.lastJoinAt) / 1000;
+    let best = null;
+    for (const [afterSec, size] of this.cfg.relaxSteps) {
+      if (n >= Math.max(size, this.cfg.minSize)) {
+        const left = Math.max(0, Math.round((afterSec - waited) * 10) / 10);
+        if (best === null || left < best) best = left;
+      }
+    }
+    return best;
+  }
+
   tick() {
     // Drop anyone who has waited too long.
     const t = this.now();
@@ -101,12 +116,14 @@ class Matchmaker {
     const t = this.now();
     const waiting = this.queue.length;
     const needed = Math.max(0, this.acceptableSize() - waiting);
+    const startsInSec = this.startsInSec();
     this.queue.forEach((p, i) => {
       this.onStatus(p.id, {
         waiting,
         position: i + 1,
         waitedSec: Math.floor((t - p.joinedAt) / 1000),
         needed,
+        startsInSec,
         idealSize: this.cfg.idealSize,
         maxWaitSec: this.cfg.maxWaitSec,
       });

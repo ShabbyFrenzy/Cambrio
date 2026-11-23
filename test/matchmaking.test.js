@@ -92,3 +92,15 @@ test('if creating the room fails, players keep their place', () => {
   mm.tick();
   assert.deepEqual(got, [4]);
 });
+
+test('status says when a 2 or 3 player game will start', () => {
+  const { mm, status, advance } = setup();
+  mm.join('a');
+  assert.equal(status.a.startsInSec, null);
+  mm.join('b');
+  assert.equal(status.b.startsInSec, 10);
+  advance(4);
+  assert.equal(status.a.startsInSec, 6);
+  mm.join('c');
+  assert.equal(status.c.startsInSec, 10);
+});
