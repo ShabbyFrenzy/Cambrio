@@ -24,6 +24,10 @@
     room: null,          // room view from the server
     code: null,          // room code we are in
     selected: [],        // [{pid, slot}] chosen for a power
+    noteMode: false,     // hard mode: making a note
+    noteInfo: { is: [], not: [], knows: [] }, // what the note will say
+    noteSel: [],         // [{pid, slot}] cards the note goes on
+    flash: new Map(),    // data-key -> {kind:'look'|'swap', until}
     selectKey: '',       // resets selection when the turn situation changes
     reveals: new Map(),  // "pid:slot" -> {card, until, shown}
     inFlight: new Map(), // data-key -> count of cards flying there (hidden until they land)
@@ -249,12 +253,24 @@
     }, delay);
   }
 
+  // Cards someone looked at or swapped glow for a few seconds so nobody misses it.
+  const FLASH_MS = 4000;
+  function flashCards(places, kind, delay) {
+    setTimeout(() => {
+      const until = Date.now() + FLASH_MS;
+      for (const pl of places) S.flash.set(placeKey(pl), { kind, until });
+      render();
+      setTimeout(render, FLASH_MS + 50);
+    }, delay);
+  }
+
   function playFx(events, startRects) {
     let t = 0;
     for (const ev of events) {
       if (ev.kind === 'move') fly(ev.card, startRects.get(placeKey(ev.from)), placeKey(ev.to), t);
       else if (ev.kind === 'stick') { stickFx(ev, startRects.get(placeKey(ev.at)), t); t += ev.ok ? 1200 : 1350; }
-      else if (ev.kind === 'peek') peekFx(ev, t);
+      else if (ev.kind === 'peek') { peekFx(ev, t); flashCards(ev.at, 'look', t); }
+      else if (ev.kind === 'swapped') flashCards(ev.at, 'swap', t + 650);
     }
   }
 
@@ -279,6 +295,12 @@
     if (o.ghost) { cls.length = 0; cls.push('card', 'ghost'); inner = ''; }
     if (o.clickable) cls.push('clickable');
     if (o.selected) cls.push('selected');
+    if (o.notePick) cls.push('note-pick');
+    const fl = o.key && S.flash.get(o.key);
+    if (fl && fl.until > Date.now()) {
+      cls.push(fl.kind === 'look' ? 'flash-look' : 'flash-swap');
+      inner += `<span class="flash-badge">${fl.kind === 'look' ? '👁' : '⇄'}</span>`;
+    }
     if (o.revealed) cls.push('revealed');
     if (o.locked) cls.push('locked');
     if (o.pop) cls.push('pop');
@@ -297,7 +319,13 @@
   function noteHtml(note) {
     const is = (note.is || []).map((r) => `<i class="is">${rankShort(r)}</i>`).join('');
     const not = (note.not || []).map((r) => `<i class="not">${rankShort(r)}</i>`).join('');
-    return `<span class="note">${is}${not}</span>`;
+    const g = S.room && S.room.game;
+    const who = (note.knows || []).map((id) => {
+      const p = g && g.players.find((x) => x.id === id);
+      const name = !p ? '?' : id === S.room.you ? 'You' : p.name;
+      return `<i class="knows" title="${esc(name)} knows this card">${esc(name.slice(0, 2))}</i>`;
+    }).join('');
+    return `${who ? `<span class="knows-row" aria-label="Known by">👁${who}</span>` : ''}${is || not ? `<span class="note">${is}${not}</span>` : ''}`;
   }
 
   // ---------- home ----------
@@ -540,8 +568,9 @@
       if (pr && c) { card = pr.card; revealed = true; }
       if (g.phase === 'peek' && isMe && c && !c.hidden) revealed = true;
       const selected = S.selected.some((t) => t.pid === p.id && t.slot === slot);
+      const notePick = S.noteMode && S.noteSel.some((t) => t.pid === p.id && t.slot === slot);
       if (g.phase === 'ended' && S.endShownRound !== S.room.round) flip = true;
-      return `<div class="slot">${cardHtml(card, { clickable: selectable && !!c, selected, revealed, flip, key: `s:${p.id}:${slot}`, data: { pid: p.id, slot } })}<div class="card-tag">#${slot + 1}</div></div>`;
+      return `<div class="slot">${cardHtml(card, { clickable: selectable && !!c, selected, notePick, revealed, flip, key: `s:${p.id}:${slot}`, data: { pid: p.id, slot } })}<div class="card-tag">#${slot + 1}</div></div>`;
     }).join('');
     const timerOn = g.current === p.id && g.turnMsLeft !== null && g.turnMsLeft !== undefined;
     const tags = [];
@@ -664,7 +693,8 @@
     const me = room.you;
     // Drop selections that no longer point at a card.
     S.selected = S.selected.filter((t) => cardAtView(g, t));
-    if (g.phase !== 'play') S.selected = [];
+    if (g.phase !== 'play') { S.selected = []; S.noteMode = false; S.noteSel = []; }
+    S.noteSel = S.noteSel.filter((t) => cardAtView(g, t));
     if (!needsTwo(g, me) && S.selected.length > 1) S.selected = S.selected.slice(-1);
     if (g.turnMsLeft !== null && g.turnMsLeft !== undefined) {
       S.turnFrozen = g.paused ? g.turnMsLeft : null;
@@ -738,22 +768,35 @@
     if (g.phase === 'ended') S.endShownRound = room.round;
   }
 
-  // Hard mode: with one card selected, tap a rank once for "it is", twice for "it isn't", again to clear.
+  // Hard mode notes: 1) pick what to note, 2) tap every card it applies to, 3) Apply.
   function noteBarHtml(g) {
-    if (g.mode !== 'hard' || g.phase !== 'play' || S.selected.length !== 1) return '';
-    const t = S.selected[0];
-    const c = cardAtView(g, t);
-    if (!c || !c.hidden) return '';
-    const note = c.note || { is: [], not: [] };
-    const owner = t.pid === S.room.you ? 'your' : `${nameIn(g, t.pid)}'s`;
-    // A rank with every card already discarded can't be this card, so it isn't offered.
+    if (g.mode !== 'hard' || g.phase !== 'play' || !g.players.some((p) => p.id === S.room.you)) return '';
+    if (!S.noteMode) return '<div class="note-bar"><button class="secondary small" data-do="notemode">✎ Make a note</button></div>';
+    const info = S.noteInfo;
     const left = g.unplayed || {};
-    const chips = NOTE_RANKS.filter((r) => (left[r] || 0) > 0 || note.is.includes(r) || note.not.includes(r)).map((r) => {
-      const st = note.is.includes(r) ? 'is' : note.not.includes(r) ? 'not' : '';
-      return `<button class="chip ${st}" data-do="note" data-rank="${r}" aria-label="${r}${st ? (st === 'is' ? ' (is)' : ' (is not)') : ''}">${rankShort(r)}</button>`;
+    // A rank whose cards are all discarded can't be any card in play, so it isn't offered.
+    const chips = NOTE_RANKS.filter((r) => (left[r] || 0) > 0 || info.is.includes(r) || info.not.includes(r)).map((r) => {
+      const st = info.is.includes(r) ? 'is' : info.not.includes(r) ? 'not' : '';
+      return `<button class="chip ${st}" data-do="noterank" data-rank="${r}" aria-pressed="${!!st}">${rankShort(r)}</button>`;
     }).join('');
-    return `<div class="note-bar"><span class="muted">Note on ${owner} card #${t.slot + 1}: tap once for <b class="is">is</b>, twice for <b class="not">isn't</b></span>
-      <div class="chips">${chips}${note.is.length || note.not.length ? '<button class="chip clear" data-do="noteclear">Clear</button>' : ''}</div></div>`;
+    const people = g.players.map((p) => {
+      const on = info.knows.includes(p.id);
+      return `<button class="chip who ${on ? 'on' : ''}" data-do="noteknows" data-id="${esc(p.id)}" aria-pressed="${on}">${esc(p.id === S.room.you ? 'You' : p.name)}</button>`;
+    }).join('');
+    const n = S.noteSel.length;
+    const hasInfo = info.is.length || info.not.length || info.knows.length;
+    return `<div class="note-bar open">
+      <span class="muted"><b>1.</b> Pick what to note. Tap a rank once for <b class="is">is</b>, twice for <b class="not">isn't</b>.</span>
+      <div class="chips">${chips}</div>
+      <span class="muted">Who knows it:</span>
+      <div class="chips">${people}</div>
+      <span class="muted"><b>2.</b> Tap the cards it applies to · <b>${n}</b> picked</span>
+      <div class="chips">
+        <button class="primary small" data-do="noteapply" ${hasInfo && n ? '' : 'disabled'}>Apply</button>
+        <button class="secondary small" data-do="noteclear" ${n ? '' : 'disabled'}>Clear notes on these</button>
+        <button class="ghost small" data-do="notedone">Done</button>
+      </div>
+    </div>`;
   }
 
   // Hard mode: how many of each card have not been discarded yet.
@@ -836,19 +879,27 @@
     if (d === 'skip') { S.selected = []; return act('skip_power'); }
     if (d === 'done') return act('done_sticking');
     if (d === 'cardsleft') { S.showLeft = !S.showLeft; return render(); }
-    if (d === 'note' || d === 'noteclear') {
-      const t = S.selected[0];
-      const c = t && cardAtView(g, t);
-      if (!c) return;
-      const note = { is: [...((c.note && c.note.is) || [])], not: [...((c.note && c.note.not) || [])] };
-      if (d === 'noteclear') { note.is = []; note.not = []; }
-      else {
-        const r = el.dataset.rank;
-        if (note.is.includes(r)) { note.is = note.is.filter((x) => x !== r); note.not.push(r); }
-        else if (note.not.includes(r)) note.not = note.not.filter((x) => x !== r);
-        else note.is.push(r);
-      }
-      return act('note', { target: { pid: t.pid, slot: t.slot }, note });
+    if (d === 'notemode') { S.noteMode = true; S.selected = []; return render(); }
+    if (d === 'notedone') { S.noteMode = false; S.noteSel = []; S.noteInfo = { is: [], not: [], knows: [] }; return render(); }
+    if (d === 'noterank') {
+      const info = S.noteInfo; const r = el.dataset.rank;
+      if (info.is.includes(r)) { info.is = info.is.filter((x) => x !== r); info.not.push(r); }
+      else if (info.not.includes(r)) info.not = info.not.filter((x) => x !== r);
+      else info.is.push(r);
+      return render();
+    }
+    if (d === 'noteknows') {
+      const info = S.noteInfo; const id = el.dataset.id;
+      info.knows = info.knows.includes(id) ? info.knows.filter((x) => x !== id) : [...info.knows, id];
+      return render();
+    }
+    if (d === 'noteapply' || d === 'noteclear') {
+      const targets = S.noteSel.slice();
+      const msg = d === 'noteapply' ? { targets, add: S.noteInfo } : { targets, clear: true };
+      S.noteSel = [];
+      if (d === 'noteapply') S.noteInfo = { is: [], not: [], knows: [] };
+      act('note', msg);
+      return render();
     }
     if (d === 'cambio') {
       if (!confirming('cambio')) return askToConfirm('cambio');
@@ -861,6 +912,11 @@
     // for the J, Q and black K powers, which need two.
     if (el.dataset.pid !== undefined && el.classList.contains('clickable')) {
       const t = { pid: el.dataset.pid, slot: Number(el.dataset.slot) };
+      if (S.noteMode) { // picking cards for a note: any number
+        const j = S.noteSel.findIndex((x) => x.pid === t.pid && x.slot === t.slot);
+        if (j >= 0) S.noteSel.splice(j, 1); else S.noteSel.push(t);
+        return render();
+      }
       const i = S.selected.findIndex((x) => x.pid === t.pid && x.slot === t.slot);
       if (i >= 0) S.selected.splice(i, 1);
       else {
