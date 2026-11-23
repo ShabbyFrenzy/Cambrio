@@ -1,3 +1,11 @@
+/* Suit symbols come from a proper symbol font: some interface fonts draw a tiny
+   spade or club that looks like a diamond. Only the four suit characters use it. */
+@font-face {
+  font-family: "Card Suits";
+  src: local("Segoe UI Symbol"), local("Apple Symbols"), local("Arial Unicode MS"), local("DejaVu Sans"), local("Arial");
+  unicode-range: U+2660-2667;
+}
+
 :root {
   --felt: #145a3c;
   --felt-dark: #0e4430;
@@ -19,7 +27,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Card Suits", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--ink);
   background: radial-gradient(ellipse at 50% 30%, var(--felt-light), var(--felt) 55%, var(--felt-dark));
   min-height: 100vh;
@@ -324,3 +332,7 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 .tracker b { color: var(--ink); }
 .tracker b.noted { color: #4cd187; }
 .tracker .q { color: rgba(255,255,255,.45); }
+
+/* King suit symbols in notes, chips and the counter */
+.ks { font-size: 1.3em; line-height: 0; vertical-align: -0.08em; margin-left: 1px; }
+.left-cell b { font-size: 14px; }

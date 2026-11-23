@@ -43,7 +43,8 @@
     lastDrawnKey: null,
   };
 
-  const SUIT = { S: '♠', H: '♥', D: '♦', C: '♣' };
+  // \uFE0E asks for the plain text symbol, so no device swaps in a coloured emoji.
+  const SUIT = { S: '♠\uFE0E', H: '♥\uFE0E', D: '♦\uFE0E', C: '♣\uFE0E' };
   const POWER_TEXT = {
     peekOwn: 'Look at one of your own cards',
     peekOther: "Look at one of another player's cards",
@@ -317,7 +318,8 @@
   // Lowest to highest value: red K (-1), Joker (0), A ... Q, black K (13).
   const NOTE_RANKS = ['K-red', 'JOKER', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K-black'];
   const byValue = (ranks) => ranks.slice().sort((a, b) => NOTE_RANKS.indexOf(a) - NOTE_RANKS.indexOf(b));
-  const rankShort = (r) => ({ JOKER: 'Jk', 'K-red': 'K♥', 'K-black': 'K♠' }[r] || r);
+  // Kings carry a bigger suit symbol so a small spade can't be mistaken for a diamond.
+  const rankShort = (r) => ({ JOKER: 'Jk', 'K-red': `K<span class="ks">${SUIT.H}</span>`, 'K-black': `K<span class="ks">${SUIT.S}</span>` }[r] || r);
   function noteHtml(note) {
     const is = byValue(note.is || []).map((r) => `<i class="is">${rankShort(r)}</i>`).join('');
     const not = byValue(note.not || []).map((r) => `<i class="not">${rankShort(r)}</i>`).join('');
@@ -853,8 +855,8 @@
   }
 
   // Hard mode: how many of each card have not been discarded yet.
-  const LEFT_ORDER = [['JOKER', 'Joker', 2], ['A', 'A', 4], ['2', '2', 4], ['3', '3', 4], ['4', '4', 4], ['5', '5', 4], ['6', '6', 4],
-    ['7', '7', 4], ['8', '8', 4], ['9', '9', 4], ['10', '10', 4], ['J', 'J', 4], ['Q', 'Q', 4], ['K-red', 'K ♥♦', 2], ['K-black', 'K ♠♣', 2]];
+  const LEFT_ORDER = [['K-red', `K ${SUIT.H}${SUIT.D}`, 2], ['JOKER', 'Joker', 2], ['A', 'A', 4], ['2', '2', 4], ['3', '3', 4], ['4', '4', 4], ['5', '5', 4], ['6', '6', 4],
+    ['7', '7', 4], ['8', '8', 4], ['9', '9', 4], ['10', '10', 4], ['J', 'J', 4], ['Q', 'Q', 4], ['K-black', `K ${SUIT.S}${SUIT.C}`, 2]];
   function cardsLeftHtml(g) {
     if (!opt(g, 'counter') || !g.unplayed) return '';
     const open = !!S.showLeft;

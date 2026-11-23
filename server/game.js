@@ -90,7 +90,7 @@ function shuffle(arr, rng = Math.random) {
 function cardLabel(card) {
   if (!card) return '?';
   if (card.rank === 'JOKER') return 'Joker';
-  const suit = { S: '♠', H: '♥', D: '♦', C: '♣' }[card.suit];
+  const suit = { S: '♠\uFE0E', H: '♥\uFE0E', D: '♦\uFE0E', C: '♣\uFE0E' }[card.suit];
   return card.rank + suit;
 }
 
