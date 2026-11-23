@@ -557,9 +557,11 @@
 
     if (g.phase === 'peek') {
       const meP = g.players.find((p) => p.id === me);
-      if (!meP) return '<div class="msg">Players are peeking at their cards…</div>';
-      if (meP.ready) return '<div class="msg">Waiting for everyone to finish peeking…</div>';
-      return `<div class="msg">Memorize your <b>bottom ${g.peekCount === 3 ? 'three' : 'two'} cards</b>. They'll flip face down when you're ready.</div>
+      const secs = g.peekMsLeft !== null && g.peekMsLeft !== undefined
+        ? ` Cards flip face down in <b class="peek-countdown">${Math.ceil(peekLeft() / 1000)}</b>s.` : '';
+      if (!meP) return `<div class="msg">Players are peeking at their cards…${secs}</div>`;
+      if (meP.ready) return `<div class="msg">Waiting for everyone to finish peeking…${secs}</div>`;
+      return `<div class="msg">Memorize your <b>bottom ${g.peekCount === 3 ? 'three' : 'two'} cards</b>.${secs || " They'll flip face down when you're ready."}</div>
         <div class="actions"><button class="primary" data-do="ready">I've got them</button></div>`;
     }
     if (g.phase === 'ended') return '';
@@ -610,6 +612,9 @@
   }
 
   // Turn timer, counted locally between server updates.
+  function peekLeft() {
+    return Math.max(0, (S.peekDeadline || 0) - Date.now());
+  }
   function turnLeft() {
     if (S.turnFrozen !== null) return S.turnFrozen;
     return Math.max(0, (S.turnDeadline || 0) - Date.now());
@@ -669,6 +674,12 @@
       if (!S.closingDeadline || Math.abs(S.closingDeadline - deadline) > 400) S.closingDeadline = deadline;
     } else {
       S.closingDeadline = null;
+    }
+    if (g.peekMsLeft !== null && g.peekMsLeft !== undefined) {
+      const deadline = Date.now() + g.peekMsLeft;
+      if (!S.peekDeadline || Math.abs(S.peekDeadline - deadline) > 400) S.peekDeadline = deadline;
+    } else {
+      S.peekDeadline = null;
     }
 
     const myIdx = g.players.findIndex((p) => p.id === me);
@@ -765,6 +776,8 @@
   setInterval(() => {
     const el = app.querySelector('.countdown');
     if (el) el.textContent = String(Math.ceil(closingLeft() / 1000));
+    const peekEl = app.querySelector('.peek-countdown');
+    if (peekEl) peekEl.textContent = String(Math.ceil(peekLeft() / 1000));
     const secs = app.querySelector('.turn-secs');
     if (secs) {
       const left = turnLeft();

@@ -47,7 +47,7 @@ Open two browser windows (or one normal and one private window) to play against 
   - Sticking another player's card: the sticker then gives that player one of their own cards. *(guess)*
   - The whole table pauses until that card is given (a random card is given after 20 seconds).
   - To stick: select a card, then press Stick in the action panel.
-- Turn timer: the host can set one (off, 10, 15, 20, 30 or 60 seconds). Quick play always uses 10 seconds. The timer restarts after every action you take on your turn (drawing, discarding, looking).
+- Turn timer: the host can set one (off, 10, 15, 20, 30 or 60 seconds). Quick play always uses 30 seconds. The timer restarts after every action you take on your turn (drawing, discarding, looking).
 - Modes (private rooms only, quick play is always Normal):
   - Easy: once you have seen a card, it stays face up for you wherever it moves.
   - Normal: remember your cards yourself.
@@ -57,7 +57,7 @@ Open two browser windows (or one normal and one private window) to play against 
 
 ## Other guesses (easy to change)
 
-1. The host picks 4 or 6 cards each and the max players (2 to 8) in the lobby (6 cards allows up to 6 players). At the start you see your bottom row (2 cards, or 3 with 6 cards) until you press "I've got them".
+1. The host picks 4 or 6 cards each and the max players (2 to 8) in the lobby (6 cards allows up to 6 players). At the start you see your bottom row (2 cards, or 3 with 6 cards) until you press "I've got them" or 10 seconds pass (in quick play, the 10 seconds start once everyone has arrived).
 2. Calling Cambrio uses your turn and everyone else gets one more turn. The caller's cards are not locked: powers and sticks still work on them.
 3. When the turn timer runs out, the turn is skipped (a drawn card is discarded without using its power). Timers freeze while the table waits for a card to be given. With no timer, a player who is away on their turn is skipped after 45 seconds.
 5. Quick play starts a game of 4 right away, or of 2 or 3 once nobody new has joined for 10 seconds.

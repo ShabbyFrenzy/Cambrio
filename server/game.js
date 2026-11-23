@@ -30,6 +30,7 @@ const INITIAL_PEEK_SLOTS = PEEK_SLOTS[4];
 const MAX_PLAYERS_BY_HAND = { 4: 8, 6: 6 }; // keep enough cards in the deck
 const MIN_PLAYERS = 2;
 const TURN_TIMER_CHOICES = [0, 10, 15, 20, 30, 60]; // seconds; 0 = no timer
+const PEEK_MS = 10000; // time to memorise your bottom row at the start (guess)
 const GIVE_TIMEOUT_MS = 20000; // the server gives a random card if a sticker takes longer
 const MAX_PLAYERS = 8;
 // Private rooms can pick a mode. easy: cards you have seen stay face up for you.
@@ -110,6 +111,7 @@ class Game {
     this.turnDeadline = null;
     this.pauseStart = null; // set while everyone waits for a sticker to give a card
     this.doneSticking = new Set(); // no-timer games: who pressed "No more sticks"
+    this.peekDeadline = this.now() + PEEK_MS; // null while a quick play game waits for players to arrive
     this.mode = MODES.includes(opts.mode) ? opts.mode : 'normal';
     this.known = new Map(); // playerId -> Set of card objects that player has seen (easy mode)
     this.notes = new Map(); // playerId -> Map card object -> {is:[], not:[]} (hard mode)
@@ -251,6 +253,7 @@ class Game {
 
   maybeStartPlay() {
     if (this.phase !== 'peek' || this.awaiting.size) return;
+    if (this.peekDeadline === null) this.peekDeadline = this.now() + PEEK_MS; // everyone has arrived
     if (this.players.every((p) => p.ready || !p.connected)) {
       this.phase = 'play';
       this.turn = 0;
@@ -258,6 +261,16 @@ class Game {
       this.addLog(`Game on! ${this.current().name} goes first.`);
       this.startTurnClock();
     }
+  }
+
+  /** Called by the server when the peek countdown may have run out. Returns true if play started. */
+  checkPeekTimeout() {
+    if (this.phase !== 'peek' || this.awaiting.size || this.peekDeadline === null) return false;
+    if (this.now() < this.peekDeadline) return false;
+    for (const p of this.players) p.ready = true;
+    this.maybeStartPlay();
+    this.seq++;
+    return this.phase === 'play';
   }
 
   requireTurn(pid, stage) {
@@ -722,6 +735,8 @@ class Game {
       handSize: this.handSize,
       peekCount: this.peekSlots.length,
       phase: this.phase,
+      peekMsLeft: this.phase === 'peek' && this.peekDeadline !== null && !this.awaiting.size
+        ? Math.max(0, this.peekDeadline - this.now()) : null,
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -770,5 +785,5 @@ class Game {
 
 module.exports = {
   Game, GameError, buildDeck, cardValue, cardPower, cardLabel,
-  TURN_TIMER_CHOICES, GIVE_TIMEOUT_MS, MODES, NOTE_RANKS, HAND_SIZE, HAND_SIZES, MIN_PLAYERS, MAX_PLAYERS, MAX_PLAYERS_BY_HAND, INITIAL_PEEK_SLOTS, PEEK_SLOTS,
+  TURN_TIMER_CHOICES, GIVE_TIMEOUT_MS, PEEK_MS, MODES, NOTE_RANKS, HAND_SIZE, HAND_SIZES, MIN_PLAYERS, MAX_PLAYERS, MAX_PLAYERS_BY_HAND, INITIAL_PEEK_SLOTS, PEEK_SLOTS,
 };

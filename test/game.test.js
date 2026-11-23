@@ -442,3 +442,29 @@ test('rooms: mode is host-only, private only, and passed to the game', () => {
   assert.strictEqual(rooms.view(room).mode, 'hard');
   assert.strictEqual(rooms.startGame(room.code).mode, 'hard');
 });
+
+test('peek countdown: cards flip down for everyone when it runs out', () => {
+  let now = 0;
+  const g = new Game([{ id: 'a', name: 'Ann' }, { id: 'b', name: 'Bob' }], { now: () => now });
+  assert.strictEqual(g.view('a').peekMsLeft, 10000);
+  g.act('a', { type: 'ready' });
+  now = 9999;
+  assert.strictEqual(g.checkPeekTimeout(), false);
+  now = 10000;
+  assert.strictEqual(g.checkPeekTimeout(), true);
+  assert.strictEqual(g.phase, 'play');
+  assert.strictEqual(g.view('a').peekMsLeft, null);
+});
+
+test('quick play: 30 second turns, and the peek countdown waits for everyone to arrive', () => {
+  const rooms = require('../server/rooms');
+  const code = rooms.createRoomWithPlayers([{ playerId: 'x', name: 'X' }, { playerId: 'y', name: 'Y' }], { autoStart: true });
+  const g = rooms.getRoom(code).game;
+  assert.strictEqual(g.turnMs, 30000);
+  assert.strictEqual(g.view('x').peekMsLeft, null);
+  assert.strictEqual(g.checkPeekTimeout(), false);
+  g.setConnected('x', true);
+  assert.strictEqual(g.view('x').peekMsLeft, null);
+  g.setConnected('y', true);
+  assert.ok(g.view('x').peekMsLeft > 9000);
+});
